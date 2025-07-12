@@ -4,4 +4,7 @@ faiss-cpu
 openai
 python-dotenv
 numpy
-gunicorn 
+gunicorn
+google-auth
+google-auth-oauthlib
+google-api-python-client
