@@ -2,7 +2,8 @@ name: Update FAQ JSON
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # UTCの0時 → JSTの9時
+    - cron: '0 0 * * *'  # 毎日0時（UTC）に実行
+  workflow_dispatch:     # 👈 これを追加
 
 jobs:
   update:
