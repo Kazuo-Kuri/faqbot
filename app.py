@@ -37,6 +37,10 @@ index.add(faq_vectors)
 # Flaskアプリ
 app = Flask(__name__)
 
+@app.route("/", methods=["GET"])
+def home():
+    return "FAQ bot backend is running!"
+
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json()
