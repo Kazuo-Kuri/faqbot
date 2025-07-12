@@ -15,3 +15,6 @@ Thumbs.db
 
 # ログや一時ファイル
 log.txt
+
+__pycache__/
+*.pyc

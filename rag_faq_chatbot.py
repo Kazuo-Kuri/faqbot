@@ -71,7 +71,7 @@ async def chat(query: Query):
         with open(suggestion_path, "w", encoding="utf-8") as f:
             json.dump(existing, f, ensure_ascii=False, indent=2)
 
-        return {"answer": "該当するFAQが見つかりませんでした。"}
+        return {"answer": "申し訳ございません。FAQには該当の情報が含まれていません。詳細につきましては、メールもしくはお問合せフォームよりお問合せをお願いいたします。"}
 
     context = "\n".join([f"Q: {questions[i]}\nA: {answers[i]}" for i in matched[:3]])
     prompt = f"以下はFAQです。ユーザーの質問に答えてください。\n\n{context}\n\nユーザーの質問: {user_q}\n回答:"
