@@ -22,7 +22,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: 📝 スプレッドシートから data/faq.json を生成
-        run: python generate_faq.py
+        run: python update_faq.py
 
       - name: ✅ 差分があるか確認
         id: git-check
@@ -41,3 +41,7 @@ jobs:
         run: |
           git commit -m "🤖 Update data/faq.json from spreadsheet"
           git push
+
+      - name: 🚀 RenderにWebhookでデプロイを通知
+        if: steps.git-check.outputs.changed == 'true'
+        run: curl -X POST ${{ secrets.RENDER_DEPLOY_HOOK }}
