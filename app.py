@@ -6,6 +6,7 @@ import json
 import os
 from dotenv import load_dotenv
 import datetime
+from flask_cors import CORS
 
 # 環境変数ロード
 load_dotenv()
@@ -36,6 +37,7 @@ index.add(faq_vectors)
 
 # Flaskアプリ
 app = Flask(__name__)
+CORS(app)
 
 @app.route("/", methods=["GET"])
 def home():
