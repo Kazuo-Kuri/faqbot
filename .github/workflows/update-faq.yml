@@ -21,6 +21,9 @@ jobs:
       - name: 🔧 依存パッケージをインストール
         run: pip install -r requirements.txt
 
+      - name: 🔐 credentials.json を GitHub Secrets から復元
+        run: echo "${{ secrets.GOOGLE_CREDENTIALS_JSON }}" > credentials.json
+
       - name: 📝 スプレッドシートから data/faq.json を生成
         run: python update_faq.py
 
