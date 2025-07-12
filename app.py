@@ -71,7 +71,6 @@ def chat():
     D, I = index.search(np.array([q_vector]), k=5)
     matched = [i for i in I[0] if category_filter is None or categories[i] == category_filter]
 
-    # 回答生成（FAQが見つかっても内容によって未回答になる可能性があるためここで生成）
     if matched:
         context = "\n".join([f"Q: {questions[i]}\nA: {answers[i]}" for i in matched[:3]])
     else:
@@ -86,9 +85,10 @@ def chat():
     )
     answer = completion.choices[0].message.content
 
-    # 回答に「申し訳ありません」が含まれる場合、未回答としてスプレッドシートに書き出す
-    if "申し訳ありません" in answer:
+    if "申し訳" in answer:
         try:
+            print("未回答としてスプレッドシートに書き込みます")
+            print(f"質問: {user_q}")
             service = build("sheets", "v4", credentials=credentials)
             sheet = service.spreadsheets()
             sheet.values().append(
