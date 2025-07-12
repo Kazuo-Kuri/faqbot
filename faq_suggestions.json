@@ -3,5 +3,10 @@
     "question": "印刷可能色を教えてください",
     "count": 1,
     "status": "未回答"
+  },
+  {
+    "question": "納期",
+    "count": 2,
+    "status": "未回答"
   }
 ]
