@@ -29,17 +29,29 @@ existing_questions = set(row[0] for row in existing_values if len(row) > 0)
 with open(JSON_FILE, 'r', encoding='utf-8') as f:
     suggestions = json.load(f)
 
-# ===== 重複除外して新規だけ抽出 =====
-new_entries = [
-    [item["question"], item["count"], item["status"]]
-    for item in suggestions
-    if item["question"] not in existing_questions
-]
+# ===== 重複と無効データを除外して新規だけ抽出 =====
+new_entries = []
+for item in suggestions:
+    if not isinstance(item, dict):
+        continue  # 無効データ（辞書でない）
+    
+    question = item.get("question", "").strip()
+    count = item.get("count", 1)
+    status = item.get("status", "未回答")
+    
+    if (
+        question.lower() == "string" or
+        question == "" or
+        question in existing_questions
+    ):
+        continue  # ダミーや空、重複を除外
+    
+    new_entries.append([question, count, status])
 
+# ===== 書き出し =====
 if not new_entries:
     print("⚠️ 新規データはありません。書き込みは行われませんでした。")
 else:
-    # ===== 書き出し =====
     sheet.values().append(
         spreadsheetId=SPREADSHEET_ID,
         range=f"{SHEET_NAME}!A2",
