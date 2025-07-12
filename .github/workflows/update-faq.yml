@@ -1,4 +1,4 @@
-name: Update FAQ JSON
+name: Update FAQ JSON and Export Suggestions
 
 on:
   schedule:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:     # 手動実行も可能
 
 jobs:
-  update:
+  update_faq:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -26,10 +26,10 @@ jobs:
         run: |
           echo "${{ secrets.GOOGLE_CREDENTIALS }}" | base64 -d > credentials.json
 
-      - name: Run update script
+      - name: Run update_faq_json.py
         run: python update_faq_json.py
 
-      - name: Commit and push changes
+      - name: Commit and push updated faq_data.json
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -41,7 +41,7 @@ jobs:
 
   export_suggestions:
     runs-on: ubuntu-latest
-    needs: update  # FAQ更新完了後に実行
+    needs: update_faq  # FAQ更新後に実行
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
