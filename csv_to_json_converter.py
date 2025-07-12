@@ -10,10 +10,13 @@ with open(csv_file, "r", encoding="utf-8-sig") as f:
     reader = csv.DictReader(f)
     for row in reader:
         if "question" in row and "answer" in row:
-            faq_list.append({
+            faq = {
                 "question": row["question"].strip(),
                 "answer": row["answer"].strip()
-            })
+            }
+            if "category" in row:
+                faq["category"] = row["category"].strip()
+            faq_list.append(faq)
         else:
             raise ValueError("CSVには 'question' と 'answer' の列が必要です")
 
