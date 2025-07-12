@@ -26,7 +26,7 @@ credentials = service_account.Credentials.from_service_account_info(
 )
 
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
-SHEET_NAME = "suggestions"  # スプレッドシートのシート名
+SHEET_NAME = "SUG"  # スプレッドシートのシート名
 
 # FAQデータ読み込み
 with open("faq_data.json", "r", encoding="utf-8") as f:
