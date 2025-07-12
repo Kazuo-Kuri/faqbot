@@ -2,19 +2,33 @@ from flask import Flask, request, jsonify
 import faiss
 import openai
 import numpy as np
-import json
 import os
-from dotenv import load_dotenv
+import json
 import datetime
+from dotenv import load_dotenv
 from flask_cors import CORS
-from google.oauth2.service_account import Credentials
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
+import base64
 
-# === 初期化 ===
+# 環境変数ロード
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-# === FAQデータの読み込み ===
+# Google認証
+encoded_cred = os.getenv("GOOGLE_CREDENTIALS_BASE64")
+creds_json = base64.b64decode(encoded_cred).decode("utf-8")
+creds_dict = json.loads(creds_json)
+
+credentials = service_account.Credentials.from_service_account_info(
+    creds_dict,
+    scopes=["https://www.googleapis.com/auth/spreadsheets"]
+)
+
+SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
+SHEET_NAME = "suggestions"  # スプレッドシートのシート名
+
+# FAQデータ読み込み
 with open("faq_data.json", "r", encoding="utf-8") as f:
     faq_items = json.load(f)
 
@@ -22,7 +36,7 @@ questions = [item["question"] for item in faq_items]
 answers = [item["answer"] for item in faq_items]
 categories = [item.get("category", "") for item in faq_items]
 
-# === Embedding 関連 ===
+# Embedding設定
 EMBED_MODEL = "text-embedding-3-small"
 def get_embedding(text):
     response = openai.embeddings.create(
@@ -36,49 +50,13 @@ index = faiss.IndexFlatL2(dimension)
 faq_vectors = np.array([get_embedding(q) for q in questions], dtype="float32")
 index.add(faq_vectors)
 
-# === スプレッドシートに未回答を記録する関数 ===
-SPREADSHEET_ID = '1asbjzo-G9I6SmztBG18iWuiTKetOJK20JwAyPF11fA4'
-SHEET_NAME = 'Suggestions'
-SUGGESTION_RANGE = f'{SHEET_NAME}!A2:C'
-
-
-def append_to_sheet(question):
-    creds = Credentials.from_service_account_file("credentials.json", scopes=["https://www.googleapis.com/auth/spreadsheets"])
-    service = build("sheets", "v4", credentials=creds)
-    sheet = service.spreadsheets()
-
-    result = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=SUGGESTION_RANGE).execute()
-    existing = result.get("values", [])
-
-    updated = False
-    for i, row in enumerate(existing):
-        if len(row) > 0 and row[0] == question:
-            count = int(row[1]) + 1 if len(row) > 1 else 1
-            sheet.values().update(
-                spreadsheetId=SPREADSHEET_ID,
-                range=f"{SHEET_NAME}!B{i+2}",
-                valueInputOption="RAW",
-                body={"values": [[count]]}
-            ).execute()
-            updated = True
-            break
-
-    if not updated:
-        sheet.values().append(
-            spreadsheetId=SPREADSHEET_ID,
-            range=f"{SHEET_NAME}!A2",
-            valueInputOption="RAW",
-            insertDataOption="INSERT_ROWS",
-            body={"values": [[question, 1, "未回答"]]}
-        ).execute()
-
-# === Flask アプリ ===
+# Flaskアプリ
 app = Flask(__name__)
 CORS(app)
 
 @app.route("/", methods=["GET"])
 def home():
-    return "FAQ bot backend is running!"
+    return "FAQ bot is running."
 
 @app.route("/chat", methods=["POST"])
 def chat():
@@ -94,10 +72,29 @@ def chat():
     matched = [i for i in I[0] if category_filter is None or categories[i] == category_filter]
 
     if not matched:
-        append_to_sheet(user_q)
-        log_to_file(user_q, matched=False)
-        return jsonify({"response": "申し訳ございません。FAQには該当の情報が含まれていません。詳細につきましては、メールもしくはお問合せフォームよりお問合せをお願いいたします。"})
+        # Google Sheets に未回答として記録
+        try:
+            service = build("sheets", "v4", credentials=credentials)
+            sheet = service.spreadsheets()
+            sheet.values().append(
+                spreadsheetId=SPREADSHEET_ID,
+                range=f"{SHEET_NAME}!A:D",
+                valueInputOption="USER_ENTERED",
+                body={
+                    "values": [[
+                        datetime.datetime.now().isoformat(),
+                        user_q,
+                        1,
+                        "未回答"
+                    ]]
+                }
+            ).execute()
+        except Exception as e:
+            print(f"スプレッドシート書き込みエラー: {e}")
 
+        return jsonify({"response": "該当するFAQが見つかりませんでした。"})
+
+    # 回答生成
     context = "\n".join([f"Q: {questions[i]}\nA: {answers[i]}" for i in matched[:3]])
     prompt = f"以下はFAQです。ユーザーの質問に答えてください。\n\n{context}\n\nユーザーの質問: {user_q}\n回答:"
 
@@ -108,19 +105,4 @@ def chat():
     )
     answer = completion.choices[0].message.content
 
-    log_to_file(user_q, matched=True)
     return jsonify({"response": answer})
-
-
-def log_to_file(user_q, matched):
-    try:
-        with open("log.txt", "a", encoding="utf-8") as log:
-            log.write(f"[{datetime.datetime.now()}] ユーザーの質問: {user_q}\n")
-            if not matched:
-                log.write(f"[{datetime.datetime.now()}] 回答: 該当なし\n")
-    except Exception as e:
-        print(f"ログ書き込み失敗: {e}")
-
-# エントリーポイント（Render等で使う場合）
-if __name__ == "__main__":
-    app.run(debug=True, port=8000)
