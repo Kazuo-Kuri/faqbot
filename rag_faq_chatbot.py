@@ -83,6 +83,30 @@ async def chat(query: Query):
     )
     answer = completion.choices[0].message.content
 
+    # 回答文が「情報が含まれていません」パターンの場合も記録する
+    if "FAQには" in answer and "含まれていません" in answer:
+        suggestion_path = os.path.join(os.path.dirname(__file__), "faq_suggestions.json")
+        suggestion = {
+            "question": user_q,
+            "count": 1,
+            "status": "未回答"
+        }
+        if os.path.exists(suggestion_path):
+            with open(suggestion_path, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+        else:
+            existing = []
+
+        for item in existing:
+            if item["question"] == user_q:
+                item["count"] += 1
+                break
+        else:
+            existing.append(suggestion)
+
+        with open(suggestion_path, "w", encoding="utf-8") as f:
+            json.dump(existing, f, ensure_ascii=False, indent=2)
+
     with open("log.txt", "a", encoding="utf-8") as log:
         log.write(f"[{datetime.datetime.now()}] Q: {user_q}\n")
 
