@@ -14,7 +14,7 @@ load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # Load FAQ data
-with open("faq_data.json", "r", encoding="utf-8") as f:
+with open("data/faq.json", "r", encoding="utf-8") as f:
     faq_items = json.load(f)
 
 questions = [item["question"] for item in faq_items]

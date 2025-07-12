@@ -2,7 +2,7 @@ import csv
 import json
 
 csv_file = "faq.csv"
-json_file = "faq_data.json"
+json_file = "data/faq.json"
 
 faq_list = []
 

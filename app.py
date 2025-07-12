@@ -29,7 +29,7 @@ SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 SHEET_NAME = "SUG"  # スプレッドシートのシート名
 
 # FAQデータ読み込み
-with open("faq_data.json", "r", encoding="utf-8") as f:
+with open("data/faq.json", "r", encoding="utf-8") as f:
     faq_items = json.load(f)
 
 questions = [item["question"] for item in faq_items]
