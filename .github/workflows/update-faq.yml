@@ -2,7 +2,7 @@ name: Update FAQ JSON
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # 毎日0時（UTC）
+    - cron: '0 0 * * *'  # 毎日0時（UTC）＝日本時間9:00
   workflow_dispatch:
 
 jobs:
@@ -26,9 +26,8 @@ jobs:
         run: |
           echo "${{ secrets.GOOGLE_CREDENTIALS }}" | base64 -d > credentials.json
 
-      # update_faq_json.py を削除していれば以下も不要
-      # - name: Run update_faq_json.py
-      #   run: python update_faq_json.py
+      - name: Run update_faq.py
+        run: python update_faq.py
 
       - name: Commit and push updated faq_data.json
         env:
