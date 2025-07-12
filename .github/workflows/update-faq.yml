@@ -1,9 +1,9 @@
-name: Update FAQ JSON and Export Suggestions
+name: Update FAQ JSON
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # 毎日0時（UTC）に実行
-  workflow_dispatch:     # 手動実行も可能
+    - cron: '0 0 * * *'  # 毎日0時（UTC）
+  workflow_dispatch:
 
 jobs:
   update_faq:
@@ -26,6 +26,10 @@ jobs:
         run: |
           echo "${{ secrets.GOOGLE_CREDENTIALS }}" | base64 -d > credentials.json
 
+      # update_faq_json.py を削除していれば以下も不要
+      # - name: Run update_faq_json.py
+      #   run: python update_faq_json.py
+
       - name: Commit and push updated faq_data.json
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -35,27 +39,3 @@ jobs:
           git add faq_data.json
           git commit -m "Update FAQ JSON" || echo "No changes to commit"
           git push https://x-access-token:${TOKEN}@github.com/${{ github.repository }}.git
-
-  export_suggestions:
-    runs-on: ubuntu-latest
-    needs: update_faq  # FAQ更新後に実行
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Decode credentials.json
-        run: |
-          echo "${{ secrets.GOOGLE_CREDENTIALS }}" | base64 -d > credentials.json
-
-      - name: Run export_suggestions_to_sheet.py
-        run: python export_suggestions_to_sheet.py
