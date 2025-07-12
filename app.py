@@ -71,8 +71,23 @@ def chat():
     D, I = index.search(np.array([q_vector]), k=5)
     matched = [i for i in I[0] if category_filter is None or categories[i] == category_filter]
 
-    if not matched:
-        # Google Sheets に未回答として記録
+    # 回答生成（FAQが見つかっても内容によって未回答になる可能性があるためここで生成）
+    if matched:
+        context = "\n".join([f"Q: {questions[i]}\nA: {answers[i]}" for i in matched[:3]])
+    else:
+        context = ""
+
+    prompt = f"以下はFAQです。ユーザーの質問に答えてください。\n\n{context}\n\nユーザーの質問: {user_q}\n回答:"
+
+    completion = openai.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.2,
+    )
+    answer = completion.choices[0].message.content
+
+    # 回答に「申し訳ありません」が含まれる場合、未回答としてスプレッドシートに書き出す
+    if "申し訳ありません" in answer:
         try:
             service = build("sheets", "v4", credentials=credentials)
             sheet = service.spreadsheets()
@@ -91,18 +106,5 @@ def chat():
             ).execute()
         except Exception as e:
             print(f"スプレッドシート書き込みエラー: {e}")
-
-        return jsonify({"response": "該当するFAQが見つかりませんでした。"})
-
-    # 回答生成
-    context = "\n".join([f"Q: {questions[i]}\nA: {answers[i]}" for i in matched[:3]])
-    prompt = f"以下はFAQです。ユーザーの質問に答えてください。\n\n{context}\n\nユーザーの質問: {user_q}\n回答:"
-
-    completion = openai.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.2,
-    )
-    answer = completion.choices[0].message.content
 
     return jsonify({"response": answer})
