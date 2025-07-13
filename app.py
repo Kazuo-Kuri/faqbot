@@ -31,7 +31,7 @@ credentials = service_account.Credentials.from_service_account_info(
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 SHEET_NAME = "SUG"
 
-# system_prompt.txt を読み込み
+# system prompt 読み込み
 with open("system_prompt.txt", "r", encoding="utf-8") as f:
     system_prompt = f.read()
 
@@ -43,6 +43,18 @@ questions = [item["question"] for item in faq_items]
 answers = [item["answer"] for item in faq_items]
 categories = [item.get("category", "") for item in faq_items]
 
+# knowledgeデータ読み込み
+with open("data/knowledge.json", "r", encoding="utf-8") as f:
+    knowledge_dict = json.load(f)
+
+knowledge_texts = []
+knowledge_keys = []
+
+for category, entries in knowledge_dict.items():
+    for entry in entries:
+        knowledge_texts.append(f"{category}: {entry}")
+        knowledge_keys.append(category)
+
 # Embedding設定
 EMBED_MODEL = "text-embedding-3-small"
 def get_embedding(text):
@@ -53,9 +65,16 @@ def get_embedding(text):
     return np.array(response.data[0].embedding, dtype="float32")
 
 dimension = len(get_embedding("テスト"))
-index = faiss.IndexFlatL2(dimension)
+
+# FAQベクトル化
 faq_vectors = np.array([get_embedding(q) for q in questions], dtype="float32")
-index.add(faq_vectors)
+faq_index = faiss.IndexFlatL2(dimension)
+faq_index.add(faq_vectors)
+
+# Knowledgeベクトル化
+knowledge_vectors = np.array([get_embedding(text) for text in knowledge_texts], dtype="float32")
+knowledge_index = faiss.IndexFlatL2(dimension)
+knowledge_index.add(knowledge_vectors)
 
 # Flaskアプリ
 app = Flask(__name__)
@@ -78,44 +97,52 @@ def chat():
         return jsonify({"error": "質問がありません"}), 400
 
     q_vector = get_embedding(user_q)
-    D, I = index.search(np.array([q_vector]), k=5)
-    matched = [i for i in I[0] if category_filter is None or categories[i] == category_filter]
 
-    if matched:
-        context = "\n".join([f"Q: {questions[i]}\nA: {answers[i]}" for i in matched[:3]])
-    else:
-        # 🔍 キーワード抽出
+    # FAQ類似検索
+    D, I = faq_index.search(np.array([q_vector]), k=5)
+    matched = [i for i in I[0] if category_filter is None or categories[i] == category_filter]
+    faq_context = "\n".join([f"Q: {questions[i]}\nA: {answers[i]}" for i in matched[:3]])
+
+    # Knowledge類似検索
+    K_D, K_I = knowledge_index.search(np.array([q_vector]), k=3)
+    knowledge_context = "\n".join([knowledge_texts[i] for i in K_I[0]])
+
+    # フィルターマッチによる返答（該当しない場合のみGPTへ）
+    if not matched:
         info = extract_keywords(user_q)
 
-        # 製品＋フィルム → 印刷色
         if info["product"] and info["film"]:
             result = pf_matcher.get_colors_for_film_in_product(info["product"], info["film"])
             if result["matched"]:
                 return jsonify({"response": result["message"]})
 
-        # 製品 → フィルム
         if info["product"]:
             result = pf_matcher.get_films_for_product(info["product"])
             if result["matched"]:
                 return jsonify({"response": result["message"]})
 
-        # フィルム → 製品
         if info["film"]:
             result = pf_matcher.get_products_for_film(info["film"])
             if result["matched"]:
                 return jsonify({"response": result["message"]})
 
-        # 色 → フィルム
         if info["color"]:
             result = pf_matcher.get_films_for_color(info["color"])
             if result["matched"]:
                 return jsonify({"response": result["message"]})
 
-        context = ""
-
+    # GPTへプロンプト送信
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"{context}\n\nユーザーの質問: {user_q}\n回答:"}
+        {"role": "user", "content": f"""以下は製造元の知識ベースです：
+
+{knowledge_context}
+
+参考FAQ:
+{faq_context}
+
+ユーザーの質問: {user_q}
+回答:"""}
     ]
 
     completion = openai.chat.completions.create(
@@ -138,14 +165,7 @@ def chat():
                 spreadsheetId=SPREADSHEET_ID,
                 range=f"{SHEET_NAME}!A:D",
                 valueInputOption="USER_ENTERED",
-                body={
-                    "values": [[
-                        timestamp,
-                        user_q,
-                        1,
-                        "未回答"
-                    ]]
-                }
+                body={"values": [[timestamp, user_q, 1, "未回答"]]}
             ).execute()
         except Exception as e:
             print(f"スプレッドシート書き込みエラー: {e}")
