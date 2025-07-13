@@ -11,6 +11,9 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import base64
 
+from product_film_matcher import ProductFilmMatcher
+from keyword_filter import extract_keywords
+
 # 環境変数ロード
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -36,25 +39,9 @@ with open("system_prompt.txt", "r", encoding="utf-8") as f:
 with open("data/faq.json", "r", encoding="utf-8") as f:
     faq_items = json.load(f)
 
-faq_questions = [item["question"] for item in faq_items]
-faq_answers = [item["answer"] for item in faq_items]
-faq_categories = [item.get("category", "") for item in faq_items]
-
-# knowledge.json 読み込み
-with open("data/knowledge.json", "r", encoding="utf-8") as f:
-    knowledge_items = json.load(f)
-
-knowledge_contents = [f"{item['title']}：{item['content']}" for item in knowledge_items]
-
-# metadata.json 読み込み
-with open("data/metadata.json", "r", encoding="utf-8") as f:
-    metadata = json.load(f)
-
-metadata_note = f"【ファイル情報】{metadata.get('title', '')}（種類：{metadata.get('type', '')}、優先度：{metadata.get('priority', '')}）"
-
-# 検索対象とソース区分
-search_texts = faq_questions + knowledge_contents + [metadata_note]
-source_flags = ["faq"] * len(faq_questions) + ["knowledge"] * len(knowledge_contents) + ["metadata"]
+questions = [item["question"] for item in faq_items]
+answers = [item["answer"] for item in faq_items]
+categories = [item.get("category", "") for item in faq_items]
 
 # Embedding設定
 EMBED_MODEL = "text-embedding-3-small"
@@ -65,14 +52,17 @@ def get_embedding(text):
     )
     return np.array(response.data[0].embedding, dtype="float32")
 
-vectors = np.array([get_embedding(text) for text in search_texts], dtype="float32")
-dimension = vectors.shape[1]
+dimension = len(get_embedding("テスト"))
 index = faiss.IndexFlatL2(dimension)
-index.add(vectors)
+faq_vectors = np.array([get_embedding(q) for q in questions], dtype="float32")
+index.add(faq_vectors)
 
 # Flaskアプリ
 app = Flask(__name__)
 CORS(app)
+
+# マッチャー初期化
+pf_matcher = ProductFilmMatcher("data/product_film_color_matrix.json")
 
 @app.route("/", methods=["GET"])
 def home():
@@ -88,37 +78,44 @@ def chat():
         return jsonify({"error": "質問がありません"}), 400
 
     q_vector = get_embedding(user_q)
-    D, I = index.search(np.array([q_vector]), k=7)
+    D, I = index.search(np.array([q_vector]), k=5)
+    matched = [i for i in I[0] if category_filter is None or categories[i] == category_filter]
 
-    faq_context = []
-    reference_context = []
+    if matched:
+        context = "\n".join([f"Q: {questions[i]}\nA: {answers[i]}" for i in matched[:3]])
+    else:
+        # 🔍 キーワード抽出
+        info = extract_keywords(user_q)
 
-    for idx in I[0]:
-        source = source_flags[idx]
-        if source == "faq":
-            if category_filter is None or faq_categories[idx] == category_filter:
-                faq_context.append(f"Q: {faq_questions[idx]}\nA: {faq_answers[idx]}")
-        elif source == "knowledge":
-            ref_idx = idx - len(faq_questions)
-            reference_context.append(f"【参考知識】{knowledge_contents[ref_idx]}")
-        elif source == "metadata":
-            reference_context.append(metadata_note)
+        # 製品＋フィルム → 印刷色
+        if info["product"] and info["film"]:
+            result = pf_matcher.get_colors_for_film_in_product(info["product"], info["film"])
+            if result["matched"]:
+                return jsonify({"response": result["message"]})
 
-    faq_part = "\n\n".join(faq_context[:3]) if faq_context else "該当するFAQは見つかりませんでした。"
-    ref_part = "\n".join(reference_context[:2]) if reference_context else ""
+        # 製品 → フィルム
+        if info["product"]:
+            result = pf_matcher.get_films_for_product(info["product"])
+            if result["matched"]:
+                return jsonify({"response": result["message"]})
+
+        # フィルム → 製品
+        if info["film"]:
+            result = pf_matcher.get_products_for_film(info["film"])
+            if result["matched"]:
+                return jsonify({"response": result["message"]})
+
+        # 色 → フィルム
+        if info["color"]:
+            result = pf_matcher.get_films_for_color(info["color"])
+            if result["matched"]:
+                return jsonify({"response": result["message"]})
+
+        context = ""
 
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"""以下は当社のFAQおよび参考情報です。これらを参考に、ユーザーの質問に製造元の立場でご回答ください。
-
-【FAQ】
-{faq_part}
-
-【参考情報】
-{ref_part}
-
-ユーザーの質問: {user_q}
-回答:"""}
+        {"role": "user", "content": f"{context}\n\nユーザーの質問: {user_q}\n回答:"}
     ]
 
     completion = openai.chat.completions.create(
@@ -128,7 +125,7 @@ def chat():
     )
     answer = completion.choices[0].message.content
 
-    # 未回答として記録（「申し訳」など含む場合）
+    # 未回答ログ処理
     unanswered_keywords = ["申し訳", "確認", "調査"]
     if any(keyword in answer for keyword in unanswered_keywords):
         try:
