@@ -37,7 +37,7 @@ for i, row in enumerate(values[1:]):  # 1行目はヘッダーなのでスキッ
             faq['category'] = row[2].strip()
         faq_list.append(faq)
 
-# 出力フォルダの準備
+# 出力フォルダ準備
 os.makedirs('data', exist_ok=True)
 
 # JSONファイルとして保存
