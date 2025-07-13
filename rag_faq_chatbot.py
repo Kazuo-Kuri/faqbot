@@ -21,6 +21,10 @@ questions = [item["question"] for item in faq_items]
 answers = [item["answer"] for item in faq_items]
 categories = [item.get("category", "") for item in faq_items]
 
+# Load system prompt
+with open("system_prompt.txt", "r", encoding="utf-8") as f:
+    system_prompt = f.read()
+
 # Embedding
 EMBED_MODEL = "text-embedding-3-small"
 def get_embedding(text):
@@ -80,14 +84,17 @@ async def chat(query: Query):
         with open(suggestion_path, "w", encoding="utf-8") as f:
             json.dump(existing, f, ensure_ascii=False, indent=2)
 
-        answer = "申し訳ございません。FAQには該当の情報が含まれていません。詳細につきましては、メールもしくはお問合せフォームよりお問合せをお願いいたします。"
+        answer = "申し訳ございません。ただいまこちらで確認中です。詳細が分かり次第、改めてご案内いたします。"
     else:
         context = "\n".join([f"Q: {questions[i]}\nA: {answers[i]}" for i in matched[:3]])
-        prompt = f"以下はFAQです。ユーザーの質問に答えてください。\n\n{context}\n\nユーザーの質問: {user_q}\n回答:"
+        prompt = f"以下は当社FAQの一部です。これらを参考に、ユーザーの質問に製造元の立場でお答えください。\n\n{context}\n\nユーザーの質問: {user_q}\n回答:"
 
         completion = openai.chat.completions.create(
             model="gpt-4o",
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt}
+            ],
             temperature=0.2,
         )
         answer = completion.choices[0].message.content
