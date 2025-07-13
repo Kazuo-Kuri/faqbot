@@ -46,7 +46,6 @@ jobs:
       - name: 🚀 変更がある場合はコミット＆プッシュ
         if: steps.git-check.outputs.changed == 'true'
         run: |
-          git pull --rebase origin main
           git commit -m "🤖 Update data/faq.json from spreadsheet"
           git push
 
