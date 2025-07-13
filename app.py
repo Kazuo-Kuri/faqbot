@@ -4,7 +4,7 @@ import openai
 import numpy as np
 import os
 import json
-import datetime
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 from flask_cors import CORS
 from google.oauth2 import service_account
@@ -27,6 +27,10 @@ credentials = service_account.Credentials.from_service_account_info(
 
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 SHEET_NAME = "SUG"  # スプレッドシートのシート名
+
+# system_prompt.txt を読み込み
+with open("system_prompt.txt", "r", encoding="utf-8") as f:
+    system_prompt = f.read()
 
 # FAQデータ読み込み
 with open("data/faq.json", "r", encoding="utf-8") as f:
@@ -76,19 +80,28 @@ def chat():
     else:
         context = ""
 
-    prompt = f"以下はFAQです。ユーザーの質問に答えてください。\n\n{context}\n\nユーザーの質問: {user_q}\n回答:"
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"{context}\n\nユーザーの質問: {user_q}\n回答:"}
+    ]
 
     completion = openai.chat.completions.create(
         model="gpt-4o",
-        messages=[{"role": "user", "content": prompt}],
+        messages=messages,
         temperature=0.2,
     )
     answer = completion.choices[0].message.content
 
-    if "申し訳" in answer:
+    # 未回答として記録するキーワード群
+    unanswered_keywords = ["申し訳", "確認", "調査"]
+    if any(keyword in answer for keyword in unanswered_keywords):
         try:
             print("未回答としてスプレッドシートに書き込みます")
             print(f"質問: {user_q}")
+
+            jst = timezone(timedelta(hours=9))
+            timestamp = datetime.now(jst).isoformat()
+
             service = build("sheets", "v4", credentials=credentials)
             sheet = service.spreadsheets()
             sheet.values().append(
@@ -97,7 +110,7 @@ def chat():
                 valueInputOption="USER_ENTERED",
                 body={
                     "values": [[
-                        datetime.datetime.now().isoformat(),
+                        timestamp,
                         user_q,
                         1,
                         "未回答"
