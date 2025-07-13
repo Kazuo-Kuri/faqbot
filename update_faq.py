@@ -7,12 +7,11 @@ from googleapiclient.discovery import build
 SPREADSHEET_ID = '1ApH-A58jUCZSKwTBAyuPZlZTNsv_2RwKGSqZNyaHHfk'
 RANGE_NAME = 'FAQ!A1:C'  # A列:question, B列:answer, C列:category（任意）
 
-# 認証情報ファイルを読み込む
-SERVICE_ACCOUNT_FILE = 'credentials.json'
+# 環境変数から認証情報（JSON）を読み込む
+credentials_info = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
-
-credentials = service_account.Credentials.from_service_account_file(
-    SERVICE_ACCOUNT_FILE, scopes=SCOPES
+credentials = service_account.Credentials.from_service_account_info(
+    credentials_info, scopes=SCOPES
 )
 
 # Sheets APIクライアントを作成
