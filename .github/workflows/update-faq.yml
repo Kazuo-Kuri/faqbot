@@ -21,7 +21,7 @@ jobs:
       - name: 🔧 依存パッケージをインストール
         run: pip install -r requirements.txt
 
-      - name: 📝 スプレッドシートから data/faq.json を生成
+      - name: 📝 スプレッドシートから JSON ファイルを生成
         run: python update_faq.py
         env:
           GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
@@ -31,7 +31,7 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/faq.json
+          git add data/faq.json data/knowledge.json data/metadata.json
           if git diff --cached --quiet; then
             echo "changed=false" >> $GITHUB_OUTPUT
           else
@@ -46,7 +46,7 @@ jobs:
       - name: 🚀 変更がある場合はコミット＆プッシュ
         if: steps.git-check.outputs.changed == 'true'
         run: |
-          git commit -m "🤖 Update data/faq.json from spreadsheet"
+          git commit -m "🤖 Update data files from spreadsheet"
           git push
 
       - name: 🚀 RenderにWebhookでデプロイを通知
