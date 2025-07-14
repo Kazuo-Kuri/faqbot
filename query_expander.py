@@ -4,8 +4,8 @@ def expand_query(user_input, session_history):
     if not session_history:
         return user_input  # 文脈がなければそのまま返す
 
-    context = session_history[-4:]  # 直近2往復まで参照
-    context_text = "\n".join([f"{m['role']}: {m['content']}" for m in context])
+    context = session_history[-4:]  # 直近2往復分（最大4つ）
+    context_text = "\n".join([f"{m.get('role')}: {m.get('content')}" for m in context])
 
     prompt = [
         {"role": "system", "content": "あなたは曖昧な質問を明確な検索クエリに変換するAIです。"},
@@ -27,4 +27,7 @@ def expand_query(user_input, session_history):
         max_tokens=100
     )
 
-    return response.choices[0].message.content.strip()
+    expanded = response.choices[0].message.content.strip()
+    print("[Query Expansion] Original:", user_input)
+    print("[Query Expansion] Expanded:", expanded)
+    return expanded if expanded else user_input

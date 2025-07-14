@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from flask_cors import CORS
 from product_film_matcher import ProductFilmMatcher
 from keyword_filter import extract_keywords
-from query_expander import expand_query  # ✅ 追加
+from query_expander import expand_query  # ✅ クエリ拡張
 
 # 環境変数のロード
 load_dotenv()
@@ -50,10 +50,15 @@ knowledge_texts = [f"{cat}: {entry}" for cat, entries in knowledge_dict.items() 
 with open("system_prompt.txt", "r", encoding="utf-8") as f:
     base_prompt = f.read()
 
+# Embedding & FAISS 初期化
 EMBED_MODEL = "text-embedding-3-small"
 def get_embedding(text):
-    response = openai.embeddings.create(model=EMBED_MODEL, input=text)
-    return np.array(response.data[0].embedding, dtype="float32")
+    try:
+        response = openai.embeddings.create(model=EMBED_MODEL, input=text)
+        return np.array(response.data[0].embedding, dtype="float32")
+    except Exception as e:
+        print("Embedding error:", str(e))
+        return np.zeros((1536,), dtype="float32")  # 念のため fallback ベクトル（要モデル次第で長さ確認）
 
 dimension = len(get_embedding("テスト"))
 faq_vectors = np.array([get_embedding(q) for q in questions], dtype="float32")
@@ -80,28 +85,46 @@ def chat():
     session_history = get_session_history(session_id)
 
     # ✅ クエリ拡張処理（gpt-3.5で補完）
-    expanded_q = expand_query(user_q, session_history)
+    try:
+        expanded_q = expand_query(user_q, session_history).strip()
+        if not expanded_q:
+            expanded_q = user_q
+    except Exception as e:
+        print("Query expansion error:", str(e))
+        expanded_q = user_q
 
-    # ベクトル検索用の質問文（拡張後）
+    print("[USER]", user_q)
+    print("[EXPANDED]", expanded_q)
+
+    # ベクトル検索
     q_vector = get_embedding(expanded_q)
 
     D, I = faq_index.search(np.array([q_vector]), k=5)
-    faq_context = "\n".join([f"Q: {questions[i]}\nA: {answers[i]}" for i in I[0][:3]])
+    faq_context = "\n".join([
+        f"Q: {questions[i]}\nA: {answers[i]}"
+        for i in I[0] if i >= 0 and i < len(questions)
+    ])
 
     K_D, K_I = knowledge_index.search(np.array([q_vector]), k=3)
-    knowledge_context = "\n".join([knowledge_texts[i] for i in K_I[0]])
+    knowledge_context = "\n".join([
+        knowledge_texts[i]
+        for i in K_I[0] if i >= 0 and i < len(knowledge_texts)
+    ])
 
     attr_context = "\n".join([f"- {k}: {v}" for k, v in customer_attrs.items()])
 
-    # 会話履歴
+    # 会話履歴（直近3往復）
     user_assistant_pairs = [
         (session_history[i]["content"], session_history[i + 1]["content"])
         for i in range(0, len(session_history) - 1, 2)
         if session_history[i]["role"] == "user" and session_history[i + 1]["role"] == "assistant"
     ]
-    history_context = "\n".join([f"Q{idx+1}: {q}\nA{idx+1}: {a}" for idx, (q, a) in enumerate(user_assistant_pairs[-3:])])
+    history_context = "\n".join([
+        f"Q{idx+1}: {q}\nA{idx+1}: {a}"
+        for idx, (q, a) in enumerate(user_assistant_pairs[-3:])
+    ])
 
-    # ProductFilmMatcher（省略なし）
+    # Product/Film対応
     info = extract_keywords(user_q)
     for check_func in [
         pf_matcher.get_colors_for_film_in_product,
@@ -117,7 +140,7 @@ def chat():
                 "expanded_question": expanded_q
             })
 
-    # プロンプト構築
+    # システムプロンプト構築
     system_prompt = f"""{base_prompt}
 
 【顧客属性】
@@ -136,16 +159,19 @@ def chat():
         {"role": "user", "content": user_q}
     ]
 
-    completion = openai.chat.completions.create(
-        model="gpt-4o",
-        messages=messages,
-        temperature=0.2,
-    )
-    answer = completion.choices[0].message.content
+    try:
+        completion = openai.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            temperature=0.2,
+        )
+        answer = completion.choices[0].message.content
+    except Exception as e:
+        print("Chat API error:", str(e))
+        answer = "申し訳ありません、現在サーバーが混み合っています。少し時間をおいて再度お試しください。"
 
     add_to_session_history(session_id, "assistant", answer)
 
-    # ✅ 拡張前後の質問も含めて返す
     return jsonify({
         "response": answer,
         "original_question": user_q,
