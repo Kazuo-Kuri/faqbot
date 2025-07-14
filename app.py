@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from flask_cors import CORS
 from product_film_matcher import ProductFilmMatcher
 from keyword_filter import extract_keywords
-from query_expander import expand_query  # ✅ クエリ拡張
+from query_expander import expand_query  # ✅ 追加
 
 # 環境変数のロード
 load_dotenv()
@@ -79,18 +79,21 @@ def chat():
     add_to_session_history(session_id, "user", user_q)
     session_history = get_session_history(session_id)
 
-    # クエリ拡張（gpt-3.5）
+    # ✅ クエリ拡張処理（gpt-3.5で補完）
     expanded_q = expand_query(user_q, session_history)
 
-    # ベクトル検索
+    # ベクトル検索用の質問文（拡張後）
     q_vector = get_embedding(expanded_q)
+
     D, I = faq_index.search(np.array([q_vector]), k=5)
     faq_context = "\n".join([f"Q: {questions[i]}\nA: {answers[i]}" for i in I[0][:3]])
+
     K_D, K_I = knowledge_index.search(np.array([q_vector]), k=3)
     knowledge_context = "\n".join([knowledge_texts[i] for i in K_I[0]])
+
     attr_context = "\n".join([f"- {k}: {v}" for k, v in customer_attrs.items()])
 
-    # 会話履歴から直近3往復を取得
+    # 会話履歴
     user_assistant_pairs = [
         (session_history[i]["content"], session_history[i + 1]["content"])
         for i in range(0, len(session_history) - 1, 2)
@@ -98,7 +101,7 @@ def chat():
     ]
     history_context = "\n".join([f"Q{idx+1}: {q}\nA{idx+1}: {a}" for idx, (q, a) in enumerate(user_assistant_pairs[-3:])])
 
-    # ProductFilmMatcher：明示的な引数分岐
+    # ProductFilmMatcher（関数に応じた引数を明示的に渡す）
     info = extract_keywords(user_q)
 
     if info.get("product") and info.get("film"):
@@ -162,6 +165,7 @@ def chat():
         temperature=0.2,
     )
     answer = completion.choices[0].message.content
+
     add_to_session_history(session_id, "assistant", answer)
 
     return jsonify({
