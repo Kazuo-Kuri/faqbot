@@ -1,24 +1,27 @@
 from flask import Flask, request, jsonify
-import faiss
+from flask_cors import CORS
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
 import openai
+import faiss
 import numpy as np
 import os
 import json
 import time
+from datetime import datetime
 from dotenv import load_dotenv
-from flask_cors import CORS
 from product_film_matcher import ProductFilmMatcher
 from keyword_filter import extract_keywords
-from query_expander import expand_query  # ✅ 追加
+from query_expander import expand_query
 
-# 環境変数のロード
+# === 初期設定 ===
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 app = Flask(__name__)
 CORS(app)
 
-# セッション履歴管理
+# === セッション履歴管理 ===
 session_histories = {}
 HISTORY_TTL = 1800  # 30分
 
@@ -37,35 +40,55 @@ def add_to_session_history(session_id, role, content):
     if len(history) > 10:
         history[:] = history[-10:]
 
-# データ読み込み
+# === データ読み込み ===
 with open("data/faq.json", "r", encoding="utf-8") as f:
     faq_items = json.load(f)
-questions = [item["question"] for item in faq_items]
-answers = [item["answer"] for item in faq_items]
+faq_questions = [item["question"] for item in faq_items]
+faq_answers = [item["answer"] for item in faq_items]
 
 with open("data/knowledge.json", "r", encoding="utf-8") as f:
-    knowledge_dict = json.load(f)
-knowledge_texts = [f"{cat}: {entry}" for cat, entries in knowledge_dict.items() for entry in entries]
+    knowledge_items = json.load(f)
+knowledge_contents = [f"{item['title']}：{item['content']}" for item in knowledge_items]
 
-with open("system_prompt.txt", "r", encoding="utf-8") as f:
-    base_prompt = f.read()
+# メタ情報読み込み（オプション）
+metadata_note = ""
+metadata_path = "data/metadata.json"
+if os.path.exists(metadata_path):
+    with open(metadata_path, "r", encoding="utf-8") as f:
+        metadata = json.load(f)
+        metadata_note = f"【ファイル情報】{metadata.get('title', '')}（種類：{metadata.get('type', '')}、優先度：{metadata.get('priority', '')}）"
 
+# === EmbeddingとFAISSインデックス ===
 EMBED_MODEL = "text-embedding-3-small"
+
 def get_embedding(text):
     response = openai.embeddings.create(model=EMBED_MODEL, input=text)
     return np.array(response.data[0].embedding, dtype="float32")
 
-dimension = len(get_embedding("テスト"))
-faq_vectors = np.array([get_embedding(q) for q in questions], dtype="float32")
-knowledge_vectors = np.array([get_embedding(k) for k in knowledge_texts], dtype="float32")
+search_corpus = faq_questions + knowledge_contents + [metadata_note]
+source_flags = ["faq"] * len(faq_questions) + ["knowledge"] * len(knowledge_contents) + ["metadata"]
+vector_data = np.array([get_embedding(text) for text in search_corpus], dtype="float32")
+dimension = vector_data.shape[1]
+index = faiss.IndexFlatL2(dimension)
+index.add(vector_data)
 
-faq_index = faiss.IndexFlatL2(dimension)
-faq_index.add(faq_vectors)
-knowledge_index = faiss.IndexFlatL2(dimension)
-knowledge_index.add(knowledge_vectors)
+# === Google Sheets設定 ===
+SPREADSHEET_ID = "1asbjzo-G9I6SmztBG18iWuiTKetOJK20JwAyPF11fA4"
+UNANSWERED_SHEET = "faq_suggestions"
+FEEDBACK_SHEET = "feedback_log"
+SERVICE_ACCOUNT_FILE = "credentials.json"
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+credentials = service_account.Credentials.from_service_account_file(
+    SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+sheet_service = build("sheets", "v4", credentials=credentials).spreadsheets()
 
+# === 補助ツール ===
 pf_matcher = ProductFilmMatcher("data/product_film_color_matrix.json")
 
+with open("system_prompt.txt", "r", encoding="utf-8") as f:
+    base_prompt = f.read()
+
+# === チャットエンドポイント ===
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json()
@@ -78,93 +101,65 @@ def chat():
 
     add_to_session_history(session_id, "user", user_q)
     session_history = get_session_history(session_id)
-
-    # ✅ クエリ拡張処理（gpt-3.5で補完）
     expanded_q = expand_query(user_q, session_history)
-
-    # ベクトル検索用の質問文（拡張後）
     q_vector = get_embedding(expanded_q)
 
-    D, I = faq_index.search(np.array([q_vector]), k=5)
-    faq_context = "\n".join([f"Q: {questions[i]}\nA: {answers[i]}" for i in I[0][:3]])
+    D, I = index.search(np.array([q_vector]), k=7)
+    faq_context = []
+    reference_context = []
 
-    K_D, K_I = knowledge_index.search(np.array([q_vector]), k=3)
-    knowledge_context = "\n".join([knowledge_texts[i] for i in K_I[0]])
+    for idx in I[0]:
+        src = source_flags[idx]
+        if src == "faq":
+            q = faq_questions[idx]
+            a = faq_answers[idx]
+            faq_context.append(f"Q: {q}\nA: {a}")
+        elif src == "knowledge":
+            reference_context.append(f"【参考知識】{knowledge_contents[idx - len(faq_questions)]}")
+        elif src == "metadata":
+            reference_context.append(metadata_note)
 
-    attr_context = "\n".join([f"- {k}: {v}" for k, v in customer_attrs.items()])
+    if not faq_context:
+        # 未回答としてスプレッドシートへ記録
+        new_row = [[
+            user_q,
+            1,
+            "未回答",
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ]]
+        sheet_service.values().append(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{UNANSWERED_SHEET}!A2:D",
+            valueInputOption="RAW",
+            body={"values": new_row}
+        ).execute()
 
-    # 会話履歴
-    user_assistant_pairs = [
-        (session_history[i]["content"], session_history[i + 1]["content"])
-        for i in range(0, len(session_history) - 1, 2)
-        if session_history[i]["role"] == "user" and session_history[i + 1]["role"] == "assistant"
-    ]
-    history_context = "\n".join([f"Q{idx+1}: {q}\nA{idx+1}: {a}" for idx, (q, a) in enumerate(user_assistant_pairs[-3:])])
+        answer = "申し訳ございません。ただいまこちらで確認中です。詳細が分かり次第、改めてご案内いたします。"
+    else:
+        # 通常回答
+        prompt = f"""{base_prompt}
 
-    # ProductFilmMatcher（関数に応じた引数を明示的に渡す）
-    info = extract_keywords(user_q)
+【FAQ】
+{chr(10).join(faq_context[:3])}
 
-    if info.get("product") and info.get("film"):
-        result = pf_matcher.get_colors_for_film_in_product(info["product"], info["film"])
-        if result and result["matched"]:
-            return jsonify({
-                "response": result["message"],
-                "original_question": user_q,
-                "expanded_question": expanded_q
-            })
-
-    if info.get("product"):
-        result = pf_matcher.get_films_for_product(info["product"])
-        if result and result["matched"]:
-            return jsonify({
-                "response": result["message"],
-                "original_question": user_q,
-                "expanded_question": expanded_q
-            })
-
-    if info.get("film"):
-        result = pf_matcher.get_products_for_film(info["film"])
-        if result and result["matched"]:
-            return jsonify({
-                "response": result["message"],
-                "original_question": user_q,
-                "expanded_question": expanded_q
-            })
-
-    if info.get("color"):
-        result = pf_matcher.get_films_for_color(info["color"])
-        if result and result["matched"]:
-            return jsonify({
-                "response": result["message"],
-                "original_question": user_q,
-                "expanded_question": expanded_q
-            })
-
-    # プロンプト構築
-    system_prompt = f"""{base_prompt}
+【参考情報】
+{chr(10).join(reference_context[:2])}
 
 【顧客属性】
-{attr_context}
+{chr(10).join(f"- {k}: {v}" for k, v in customer_attrs.items())}
 
-【会話履歴】
-{history_context}
+ユーザーの質問: {user_q}
+回答:"""
 
-【参考知識ベース】
-{knowledge_context}
-
-この文脈を踏まえて、次のユーザーの質問に丁寧にお答えください。"""
-
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_q}
-    ]
-
-    completion = openai.chat.completions.create(
-        model="gpt-4o",
-        messages=messages,
-        temperature=0.2,
-    )
-    answer = completion.choices[0].message.content
+        completion = openai.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": base_prompt},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2,
+        )
+        answer = completion.choices[0].message.content
 
     add_to_session_history(session_id, "assistant", answer)
 
@@ -174,9 +169,35 @@ def chat():
         "expanded_question": expanded_q
     })
 
+# === フィードバック記録 ===
+@app.route("/feedback", methods=["POST"])
+def feedback():
+    data = request.get_json()
+    question = data.get("question")
+    answer = data.get("answer")
+    feedback_value = data.get("feedback")
+
+    if not all([question, answer, feedback_value]):
+        return jsonify({"error": "不完全なフィードバックデータです"}), 400
+
+    row = [[
+        question,
+        answer,
+        feedback_value,
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ]]
+    sheet_service.values().append(
+        spreadsheetId=SPREADSHEET_ID,
+        range=f"{FEEDBACK_SHEET}!A2:D",
+        valueInputOption="RAW",
+        body={"values": row}
+    ).execute()
+
+    return jsonify({"status": "success"})
+
 @app.route("/", methods=["GET"])
 def home():
-    return "Contextual Chatbot API with query expansion is running."
+    return "Integrated Chatbot API is running."
 
 if __name__ == "__main__":
     app.run(debug=True)
