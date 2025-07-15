@@ -1,5 +1,3 @@
-import openai
-
 def expand_query(user_input, session_history):
     try:
         if not session_history:
@@ -9,15 +7,16 @@ def expand_query(user_input, session_history):
         context_text = "\n".join([f"{m['role']}: {m['content']}" for m in context])
 
         prompt = [
-            {"role": "system", "content": "あなたは曖昧な質問を明確な検索クエリに変換するAIです。"},
-            {"role": "user", "content": f"""以下は直前の会話です：
+            {"role": "system", "content": "あなたは、ユーザーのあいまいな質問を、FAQ検索に最適な形式に言い換えるアシスタントです。意味を変えず、キーワードを補って明確な文章にしてください。"},
+            {"role": "user", "content": f"""以下は直前のやり取りです：
 
 {context_text}
 
-その上で、ユーザーの次の発言を明確な検索文にしてください。
+この流れをふまえ、ユーザーの以下の質問を、FAQ検索に適したわかりやすい文に書き換えてください。
+
 ユーザーの質問：「{user_input}」
 
-→ 変換後の検索文（日本語で）：
+→ 言い換え後：
 """}
         ]
 
@@ -29,6 +28,7 @@ def expand_query(user_input, session_history):
         )
 
         return response.choices[0].message.content.strip()
+
     except Exception as e:
         print("❌ query_expander error:", e)
         return user_input

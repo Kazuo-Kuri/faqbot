@@ -55,7 +55,6 @@ knowledge_contents = [
     for text in texts
 ]
 
-# メタ情報読み込み（オプション）
 metadata_note = ""
 metadata_path = "data/metadata.json"
 if os.path.exists(metadata_path):
@@ -63,19 +62,29 @@ if os.path.exists(metadata_path):
         metadata = json.load(f)
         metadata_note = f"【ファイル情報】{metadata.get('title', '')}（種類：{metadata.get('type', '')}、優先度：{metadata.get('priority', '')}）"
 
+# === コーパス定義（順序維持が重要）===
+search_corpus = faq_questions + knowledge_contents + [metadata_note]
+source_flags = ["faq"] * len(faq_questions) + ["knowledge"] * len(knowledge_contents) + ["metadata"]
+
 # === EmbeddingとFAISSインデックス ===
 EMBED_MODEL = "text-embedding-3-small"
+VECTOR_PATH = "data/vector_data.npy"
+INDEX_PATH = "data/index.faiss"
 
 def get_embedding(text):
     response = openai.embeddings.create(model=EMBED_MODEL, input=text)
     return np.array(response.data[0].embedding, dtype="float32")
 
-search_corpus = faq_questions + knowledge_contents + [metadata_note]
-source_flags = ["faq"] * len(faq_questions) + ["knowledge"] * len(knowledge_contents) + ["metadata"]
-vector_data = np.array([get_embedding(text) for text in search_corpus], dtype="float32")
-dimension = vector_data.shape[1]
-index = faiss.IndexFlatL2(dimension)
-index.add(vector_data)
+# キャッシュロード（存在しない場合は作成）
+if os.path.exists(VECTOR_PATH) and os.path.exists(INDEX_PATH):
+    vector_data = np.load(VECTOR_PATH)
+    index = faiss.read_index(INDEX_PATH)
+else:
+    vector_data = np.array([get_embedding(text) for text in search_corpus], dtype="float32")
+    index = faiss.IndexFlatL2(vector_data.shape[1])
+    index.add(vector_data)
+    np.save(VECTOR_PATH, vector_data)
+    faiss.write_index(index, INDEX_PATH)
 
 # === Google Sheets設定 ===
 SPREADSHEET_ID = "1asbjzo-G9I6SmztBG18iWuiTKetOJK20JwAyPF11fA4"
@@ -83,7 +92,6 @@ UNANSWERED_SHEET = "faq_suggestions"
 FEEDBACK_SHEET = "feedback_log"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
-# base64から復号して辞書に変換
 credentials_info = json.loads(
     base64.b64decode(os.environ["GOOGLE_CREDENTIALS"]).decode("utf-8")
 )
@@ -125,24 +133,23 @@ def chat():
             a = faq_answers[idx]
             faq_context.append(f"Q: {q}\nA: {a}")
         elif src == "knowledge":
-            reference_context.append(f"【参考知識】{knowledge_contents[idx - len(faq_questions)]}")
+            ref_idx = idx - len(faq_questions)
+            reference_context.append(f"【参考知識】{knowledge_contents[ref_idx]}")
         elif src == "metadata":
             reference_context.append(metadata_note)
 
-    # 回答生成
     if not faq_context:
         answer = "申し訳ございません。ただいまこちらで確認中です。詳細が分かり次第、改めてご案内いたします。"
     else:
-        prompt = f"""{base_prompt}
+        faq_part = "\n\n".join(faq_context[:3])
+        ref_part = "\n".join(reference_context[:2]) if reference_context else ""
+        prompt = f"""以下は当社のFAQおよび参考情報です。これらを参考に、ユーザーの質問に製造元の立場でご回答ください。
 
 【FAQ】
-{chr(10).join(faq_context[:3])}
+{faq_part}
 
 【参考情報】
-{chr(10).join(reference_context[:2])}
-
-【顧客属性】
-{chr(10).join(f"- {k}: {v}" for k, v in customer_attrs.items())}
+{ref_part}
 
 ユーザーの質問: {user_q}
 回答:"""
@@ -157,13 +164,12 @@ def chat():
         )
         answer = completion.choices[0].message.content
 
-    # === 「申し訳」が含まれる場合は未回答として記録 ===
     if "申し訳" in answer:
         new_row = [[
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),  # A列: timestamp
-            user_q,                                        # B列: question
-            "未回答",                                       # C列: answer
-            1                                              # D列: status
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            user_q,
+            "未回答",
+            1
         ]]
         sheet_service.values().append(
             spreadsheetId=SPREADSHEET_ID,
