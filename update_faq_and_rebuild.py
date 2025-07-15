@@ -13,6 +13,8 @@ if os.getenv("GITHUB_ACTIONS") != "true":
 
 # === OpenAI APIキー設定 ===
 openai.api_key = os.getenv("OPENAI_API_KEY")
+if not openai.api_key:
+    raise ValueError("OPENAI_API_KEY is not set or empty.")
 
 # === credentials.json を直接読み込み ===
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
