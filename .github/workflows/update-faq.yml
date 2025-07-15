@@ -1,54 +1,37 @@
 name: Update FAQ from Spreadsheet
 
 on:
+  workflow_dispatch:  # 手動実行を許可
   schedule:
-    - cron: '0 2 * * *'  # 毎日午前2時（JSTで午前11時）に実行
-  workflow_dispatch:
+    - cron: '0 18 * * 0'  # 毎週月曜03:00 JST（UTC日曜18:00）
 
 jobs:
-  build:
+  update-faq:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📥 リポジトリをクローン
+      - name: リポジトリをチェックアウト
         uses: actions/checkout@v3
 
-      - name: 🐍 Pythonをセットアップ
+      - name: Python をセットアップ
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
-      - name: 🔧 依存パッケージをインストール
+      - name: 依存パッケージをインストール
         run: pip install -r requirements.txt
 
-      - name: 📝 スプレッドシートから JSON ファイルを生成
+      - name: スプレッドシートから JSON ファイルを生成
         run: python update_faq.py
         env:
-          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
 
-      - name: ✅ 差分があるか確認
-        id: git-check
+      - name: faq.json をコミット・プッシュ（変更があった場合のみ）
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/faq.json data/knowledge.json data/metadata.json
-          if git diff --cached --quiet; then
-            echo "changed=false" >> $GITHUB_OUTPUT
-          else
-            echo "changed=true" >> $GITHUB_OUTPUT
-          fi
-
-      - name: 🔁 最新のmainをpull（rebaseなし）
-        if: steps.git-check.outputs.changed == 'true'
-        run: |
-          git pull origin main --no-rebase --allow-unrelated-histories || true
-
-      - name: 🚀 変更がある場合はコミット＆プッシュ
-        if: steps.git-check.outputs.changed == 'true'
-        run: |
-          git commit -m "🤖 Update data files from spreadsheet"
+          git add data/faq.json
+          git diff --cached --quiet || git commit -m "📄 update faq.json from spreadsheet"
           git push
-
-      - name: 🚀 RenderにWebhookでデプロイを通知
-        if: steps.git-check.outputs.changed == 'true'
-        run: curl -X POST ${{ secrets.RENDER_DEPLOY_HOOK }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
