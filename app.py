@@ -138,6 +138,11 @@ def chat():
         elif src == "metadata":
             reference_context.append(metadata_note)
 
+    # ここで製品フィルムマッチャーから補足情報を取得
+    film_match_info = pf_matcher.match(user_q)
+    if film_match_info:
+        reference_context.append(f"【製品カラー情報】{film_match_info}")
+
     if not faq_context:
         answer = "申し訳ございません。ただいまこちらで確認中です。詳細が分かり次第、改めてご案内いたします。"
     else:
