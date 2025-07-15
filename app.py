@@ -47,8 +47,12 @@ faq_questions = [item["question"] for item in faq_items]
 faq_answers = [item["answer"] for item in faq_items]
 
 with open("data/knowledge.json", "r", encoding="utf-8") as f:
-    knowledge_items = json.load(f)
-knowledge_contents = [f"{item['title']}：{item['content']}" for item in knowledge_items]
+    knowledge_dict = json.load(f)
+knowledge_contents = [
+    f"{category}：{text}"
+    for category, texts in knowledge_dict.items()
+    for text in texts
+]
 
 # メタ情報読み込み（オプション）
 metadata_note = ""
