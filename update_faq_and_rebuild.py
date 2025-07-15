@@ -5,53 +5,53 @@ import faiss
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import openai
-from dotenv import load_dotenv
 import base64
 
-# === 初期設定 ===
-load_dotenv()
+# === ローカル実行時のみ .env を読み込む ===
+if os.getenv("GITHUB_ACTIONS") != "true":
+    from dotenv import load_dotenv
+    load_dotenv()
+
+# === OpenAI APIキー設定 ===
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
+# === Google 認証情報を base64 から復元 ===
+google_creds_base64 = os.getenv("GOOGLE_CREDENTIALS")
+if google_creds_base64:
+    creds_json = base64.b64decode(google_creds_base64).decode("utf-8")
+    with open("google_credentials.json", "w") as f:
+        f.write(creds_json)
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "google_credentials.json"
+
 # === スプレッドシート設定 ===
-SPREADSHEET_ID = '1ApH-A58jUCZSKwTBAyuPZlZTNsv_2RwKGSqZNyaHHfk'
-RANGE_NAME = 'FAQ!A1:C'  # A列:question, B列:answer, C列:category（任意）
+SPREADSHEET_ID = os.getenv("SPREADSHEET_ID") or '1ApH-A58jUCZSKwTBAyuPZlZTNsv_2RwKGSqZNyaHHfk'
+RANGE_NAME = 'FAQ!A1:C'
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
 
-# GOOGLE_CREDENTIALS（base64形式）を復号
-credentials_json = base64.b64decode(os.environ["GOOGLE_CREDENTIALS"]).decode("utf-8")
-credentials_info = json.loads(credentials_json)
-credentials = service_account.Credentials.from_service_account_info(
-    credentials_info, scopes=SCOPES
+# Google Sheets API認証
+credentials = service_account.Credentials.from_service_account_file(
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"], scopes=SCOPES
 )
-
-# Sheets APIクライアントを作成
 sheet_service = build('sheets', 'v4', credentials=credentials).spreadsheets()
-result = sheet_service.values().get(
-    spreadsheetId=SPREADSHEET_ID,
-    range=RANGE_NAME
-).execute()
+result = sheet_service.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_NAME).execute()
 values = result.get('values', [])
 
-# === faq.json の更新 ===
+# === faq.json を生成 ===
 faq_list = []
-for i, row in enumerate(values[1:]):  # 1行目はヘッダー
+for row in values[1:]:  # 1行目はヘッダー
     if len(row) >= 2 and row[0].strip() and row[1].strip():
-        faq = {
-            'question': row[0].strip(),
-            'answer': row[1].strip()
-        }
+        entry = {"question": row[0].strip(), "answer": row[1].strip()}
         if len(row) >= 3 and row[2].strip():
-            faq['category'] = row[2].strip()
-        faq_list.append(faq)
+            entry["category"] = row[2].strip()
+        faq_list.append(entry)
 
-os.makedirs('data', exist_ok=True)
-faq_path = 'data/faq.json'
-with open(faq_path, 'w', encoding='utf-8') as f:
+os.makedirs("data", exist_ok=True)
+with open("data/faq.json", "w", encoding="utf-8") as f:
     json.dump(faq_list, f, ensure_ascii=False, indent=2)
 
-print(f"✅ {faq_path} を生成しました。")
+print("✅ data/faq.json を保存しました。")
 
-# === knowledge.json 読み込み ===
+# === knowledge.json を読み込み ===
 with open("data/knowledge.json", "r", encoding="utf-8") as f:
     knowledge_dict = json.load(f)
 knowledge_contents = [
@@ -60,7 +60,7 @@ knowledge_contents = [
     for text in texts
 ]
 
-# === metadata 読み込み（任意）===
+# === metadata（任意）===
 metadata_note = ""
 metadata_path = "data/metadata.json"
 if os.path.exists(metadata_path):
@@ -68,7 +68,7 @@ if os.path.exists(metadata_path):
         metadata = json.load(f)
         metadata_note = f"【ファイル情報】{metadata.get('title', '')}（種類：{metadata.get('type', '')}、優先度：{metadata.get('priority', '')}）"
 
-# === ベクトル再生成 ===
+# === ベクトルを再生成 ===
 EMBED_MODEL = "text-embedding-3-small"
 search_corpus = [item["question"] for item in faq_list] + knowledge_contents + [metadata_note]
 

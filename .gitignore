@@ -2,6 +2,7 @@
 .env
 credentials.json
 encoded.txt
+**google_credentials.json**
 
 # Pythonキャッシュ
 __pycache__/
