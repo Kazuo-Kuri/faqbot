@@ -8,6 +8,7 @@ import numpy as np
 import os
 import json
 import time
+import base64
 from datetime import datetime
 from dotenv import load_dotenv
 from product_film_matcher import ProductFilmMatcher
@@ -81,7 +82,11 @@ SPREADSHEET_ID = "1asbjzo-G9I6SmztBG18iWuiTKetOJK20JwAyPF11fA4"
 UNANSWERED_SHEET = "faq_suggestions"
 FEEDBACK_SHEET = "feedback_log"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-credentials_info = json.loads(os.environ["GOOGLE_CREDENTIALS"])
+
+# base64から復号して辞書に変換
+credentials_info = json.loads(
+    base64.b64decode(os.environ["GOOGLE_CREDENTIALS"]).decode("utf-8")
+)
 credentials = service_account.Credentials.from_service_account_info(
     credentials_info, scopes=SCOPES
 )
@@ -125,7 +130,6 @@ def chat():
             reference_context.append(metadata_note)
 
     if not faq_context:
-        # 未回答としてスプレッドシートへ記録
         new_row = [[
             user_q,
             1,
@@ -141,7 +145,6 @@ def chat():
 
         answer = "申し訳ございません。ただいまこちらで確認中です。詳細が分かり次第、改めてご案内いたします。"
     else:
-        # 通常回答
         prompt = f"""{base_prompt}
 
 【FAQ】
@@ -187,15 +190,15 @@ def feedback():
         return jsonify({"error": "不完全なフィードバックデータです"}), 400
 
     row = [[
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),  # A: Timestamp
-        question,                                       # B: Question
-        answer,                                         # C: Answer
-        feedback_value,                                 # D: Feedback
-        reason                                          # E: Reason
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        question,
+        answer,
+        feedback_value,
+        reason
     ]]
     sheet_service.values().append(
         spreadsheetId=SPREADSHEET_ID,
-        range=f"{FEEDBACK_SHEET}!A2:E",  # E列まで出力
+        range=f"{FEEDBACK_SHEET}!A2:E",
         valueInputOption="RAW",
         body={"values": row}
     ).execute()
