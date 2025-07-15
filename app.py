@@ -60,11 +60,11 @@ metadata_path = "data/metadata.json"
 if os.path.exists(metadata_path):
     with open(metadata_path, "r", encoding="utf-8") as f:
         metadata = json.load(f)
-        metadata_note = f"【ファイル情報】{metadata.get('title', '')}（種類：{metadata.get('type', '')}、優先度：{metadata.get('priority', '')}）"
+        metadata_note = f"{metadata.get('title', '')}（種類：{metadata.get('type', '')}、優先度：{metadata.get('priority', '')}）"
 
 # === コーパス定義（順序維持が重要）===
-search_corpus = faq_questions + knowledge_contents + [metadata_note]
-source_flags = ["faq"] * len(faq_questions) + ["knowledge"] * len(knowledge_contents) + ["metadata"]
+search_corpus = faq_questions + knowledge_contents  # metadata_note は検索対象に含めない
+source_flags = ["faq"] * len(faq_questions) + ["knowledge"] * len(knowledge_contents)
 
 # === EmbeddingとFAISSインデックス ===
 EMBED_MODEL = "text-embedding-3-small"
@@ -135,18 +135,20 @@ def chat():
         elif src == "knowledge":
             ref_idx = idx - len(faq_questions)
             reference_context.append(f"【参考知識】{knowledge_contents[ref_idx]}")
-        elif src == "metadata":
-            reference_context.append(metadata_note)
 
-    # ここで製品フィルムマッチャーから補足情報を取得
+    # 製品フィルムマッチャーから補足情報を取得
     film_match_info = pf_matcher.match(user_q)
     if film_match_info:
         reference_context.append(f"【製品カラー情報】{film_match_info}")
 
-    if not faq_context:
+    # metadata_note を GPTへの参考情報にのみ追加（検索には含めていない）
+    if metadata_note:
+        reference_context.append(f"【参考ファイル情報】{metadata_note}")
+
+    if not faq_context and not reference_context:
         answer = "申し訳ございません。ただいまこちらで確認中です。詳細が分かり次第、改めてご案内いたします。"
     else:
-        faq_part = "\n\n".join(faq_context[:3])
+        faq_part = "\n\n".join(faq_context[:3]) if faq_context else "該当するFAQは見つかりませんでした。"
         ref_part = "\n".join(reference_context[:2]) if reference_context else ""
         prompt = f"""以下は当社のFAQおよび参考情報です。これらを参考に、ユーザーの質問に製造元の立場でご回答ください。
 
