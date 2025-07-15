@@ -160,10 +160,10 @@ def chat():
     # === 「申し訳」が含まれる場合は未回答として記録 ===
     if "申し訳" in answer:
         new_row = [[
-            user_q,
-            1,
-            "未回答",
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),  # A列: timestamp
+            user_q,                                        # B列: question
+            "未回答",                                       # C列: answer
+            1                                              # D列: status
         ]]
         sheet_service.values().append(
             spreadsheetId=SPREADSHEET_ID,
