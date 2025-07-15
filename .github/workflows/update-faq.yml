@@ -1,37 +1,40 @@
-name: Update FAQ from Spreadsheet
+name: Update faq.json and FAISS index
 
 on:
-  workflow_dispatch:  # 手動実行を許可
   schedule:
-    - cron: '0 18 * * 0'  # 毎週月曜03:00 JST（UTC日曜18:00）
+    - cron: '0 18 * * 0'  # JST月曜03:00（UTC日曜18:00）
+  workflow_dispatch:
 
 jobs:
   update-faq:
     runs-on: ubuntu-latest
 
     steps:
-      - name: リポジトリをチェックアウト
+      - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Python をセットアップ
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
-      - name: 依存パッケージをインストール
+      - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: スプレッドシートから JSON ファイルを生成
-        run: python update_faq.py
-        env:
-          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+      - name: Write credentials.json
+        run: echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > credentials.json
 
-      - name: faq.json をコミット・プッシュ（変更があった場合のみ）
+      - name: Run update_faq_and_rebuild.py
+        run: python update_faq_and_rebuild.py
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Commit and push updated files
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/faq.json
-          git diff --cached --quiet || git commit -m "📄 update faq.json from spreadsheet"
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add data/faq.json data/vector_data.npy data/index.faiss
+          git diff --cached --quiet || git commit -m "🗓️ Auto update faq.json and FAISS index"
           git push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
