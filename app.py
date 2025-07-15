@@ -9,9 +9,9 @@ import os
 import json
 import time
 import base64
+import textwrap
 from datetime import datetime
 from dotenv import load_dotenv
-import textwrap
 from product_film_matcher import ProductFilmMatcher
 from keyword_filter import extract_keywords
 from query_expander import expand_query
@@ -76,6 +76,7 @@ def get_embedding(text):
     response = openai.embeddings.create(model=EMBED_MODEL, input=text)
     return np.array(response.data[0].embedding, dtype="float32")
 
+# キャッシュロード（存在しない場合は作成）
 if os.path.exists(VECTOR_PATH) and os.path.exists(INDEX_PATH):
     vector_data = np.load(VECTOR_PATH)
     index = faiss.read_index(INDEX_PATH)
@@ -106,20 +107,14 @@ pf_matcher = ProductFilmMatcher("data/product_film_color_matrix.json")
 with open("system_prompt.txt", "r", encoding="utf-8") as f:
     base_prompt = f.read()
 
-def format_film_match_info(match_data):
-    if not match_data:
-        return ""
-
+def format_film_match_info(info):
     lines = []
-    for product, info in match_data.items():
-        lines.append(f"◆ {product}")
-        for key, values in info.items():
-            if isinstance(values, list):
-                lines.append(f"・{key}：{', '.join(values)}")
-            else:
-                lines.append(f"・{key}：{values}")
-        lines.append("")
-    return textwrap.dedent("\n".join(lines)).strip()
+    for key, values in info.items():
+        if values:
+            lines.append(f"■ {key}：")
+            for v in values:
+                lines.append(f"・{v}")
+    return textwrap.indent("\n".join(lines), prefix="")
 
 # === チャットエンドポイント ===
 @app.route("/chat", methods=["POST"])
@@ -153,8 +148,8 @@ def chat():
 
     # 製品フィルムマッチャーから補足情報を取得
     film_match_data = pf_matcher.match(user_q)
-    film_info_text = format_film_match_info(film_match_data)
-    if film_info_text:
+    if isinstance(film_match_data, dict):
+        film_info_text = format_film_match_info(film_match_data)
         reference_context.append(f"【製品カラー情報】\n{film_info_text}")
 
     if metadata_note:

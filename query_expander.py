@@ -1,3 +1,5 @@
+import openai  # ← 重要：忘れずに追加してください
+
 def expand_query(user_input, session_history):
     try:
         if not session_history:
@@ -7,8 +9,13 @@ def expand_query(user_input, session_history):
         context_text = "\n".join([f"{m['role']}: {m['content']}" for m in context])
 
         prompt = [
-            {"role": "system", "content": "あなたは、ユーザーのあいまいな質問を、FAQ検索に最適な形式に言い換えるアシスタントです。意味を変えず、キーワードを補って明確な文章にしてください。"},
-            {"role": "user", "content": f"""以下は直前のやり取りです：
+            {
+                "role": "system",
+                "content": "あなたは、ユーザーのあいまいな質問を、FAQ検索に最適な形式に言い換えるアシスタントです。意味を変えず、キーワードを補って明確な文章にしてください。"
+            },
+            {
+                "role": "user",
+                "content": f"""以下は直前のやり取りです：
 
 {context_text}
 
@@ -17,7 +24,8 @@ def expand_query(user_input, session_history):
 ユーザーの質問：「{user_input}」
 
 → 言い換え後：
-"""}
+"""
+            }
         ]
 
         response = openai.chat.completions.create(
