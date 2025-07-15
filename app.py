@@ -129,20 +129,8 @@ def chat():
         elif src == "metadata":
             reference_context.append(metadata_note)
 
+    # 回答生成
     if not faq_context:
-        new_row = [[
-            user_q,
-            1,
-            "未回答",
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        ]]
-        sheet_service.values().append(
-            spreadsheetId=SPREADSHEET_ID,
-            range=f"{UNANSWERED_SHEET}!A2:D",
-            valueInputOption="RAW",
-            body={"values": new_row}
-        ).execute()
-
         answer = "申し訳ございません。ただいまこちらで確認中です。詳細が分かり次第、改めてご案内いたします。"
     else:
         prompt = f"""{base_prompt}
@@ -168,6 +156,21 @@ def chat():
             temperature=0.2,
         )
         answer = completion.choices[0].message.content
+
+    # === 「申し訳」が含まれる場合は未回答として記録 ===
+    if "申し訳" in answer:
+        new_row = [[
+            user_q,
+            1,
+            "未回答",
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ]]
+        sheet_service.values().append(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{UNANSWERED_SHEET}!A2:D",
+            valueInputOption="RAW",
+            body={"values": new_row}
+        ).execute()
 
     add_to_session_history(session_id, "assistant", answer)
 
