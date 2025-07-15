@@ -181,19 +181,21 @@ def feedback():
     question = data.get("question")
     answer = data.get("answer")
     feedback_value = data.get("feedback")
+    reason = data.get("reason", "")
 
     if not all([question, answer, feedback_value]):
         return jsonify({"error": "不完全なフィードバックデータです"}), 400
 
     row = [[
-        question,
-        answer,
-        feedback_value,
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),  # A: Timestamp
+        question,                                       # B: Question
+        answer,                                         # C: Answer
+        feedback_value,                                 # D: Feedback
+        reason                                          # E: Reason
     ]]
     sheet_service.values().append(
         spreadsheetId=SPREADSHEET_ID,
-        range=f"{FEEDBACK_SHEET}!A2:D",
+        range=f"{FEEDBACK_SHEET}!A2:E",  # E列まで出力
         valueInputOption="RAW",
         body={"values": row}
     ).execute()
