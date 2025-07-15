@@ -5,12 +5,13 @@ from googleapiclient.discovery import build
 
 # スプレッドシートの設定
 SPREADSHEET_ID = '1ApH-A58jUCZSKwTBAyuPZlZTNsv_2RwKGSqZNyaHHfk'
-RANGE_NAME = 'FAQ!A1:C'  # A列:question, B列:answer, C列:category（任意）
+RANGE_NAME = 'FAQ!A1:C'
 
-# credentials.json ファイルから認証情報を読み込む
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+# credentials.json を読み込む
 with open("credentials.json", "r", encoding="utf-8") as f:
     credentials_info = json.load(f)
+
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
 credentials = service_account.Credentials.from_service_account_info(
     credentials_info, scopes=SCOPES
 )
@@ -26,9 +27,9 @@ result = sheet.values().get(
 ).execute()
 values = result.get('values', [])
 
-# データ整形
+# JSON化処理
 faq_list = []
-for i, row in enumerate(values[1:]):  # 1行目はヘッダーなのでスキップ
+for i, row in enumerate(values[1:]):  # 1行目はヘッダー
     if len(row) >= 2 and row[0].strip() and row[1].strip():
         faq = {
             'question': row[0].strip(),
@@ -38,12 +39,9 @@ for i, row in enumerate(values[1:]):  # 1行目はヘッダーなのでスキッ
             faq['category'] = row[2].strip()
         faq_list.append(faq)
 
-# 出力フォルダ準備
+# 出力
 os.makedirs('data', exist_ok=True)
-
-# JSONファイルとして保存
-output_path = 'data/faq.json'
-with open(output_path, 'w', encoding='utf-8') as f:
+with open('data/faq.json', 'w', encoding='utf-8') as f:
     json.dump(faq_list, f, ensure_ascii=False, indent=2)
 
-print(f'✅ {output_path} を生成しました。')
+print("✅ data/faq.json を生成しました。")
