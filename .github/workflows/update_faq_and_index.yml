@@ -21,11 +21,13 @@ jobs:
       - name: 🔧 必要なパッケージをインストール
         run: pip install -r requirements.txt
 
+      - name: 🔐 credentials.json を書き出し
+        run: echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > credentials.json
+
       - name: 🧠 FAQ & インデックスを自動更新
         run: python update_faq_and_rebuild.py
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
 
       - name: 💾 更新されたデータをコミット・プッシュ（変更があった場合のみ）
         run: |
