@@ -9,12 +9,12 @@ import os
 import json
 import time
 import base64
-import textwrap
 from datetime import datetime
 from dotenv import load_dotenv
 from product_film_matcher import ProductFilmMatcher
 from keyword_filter import extract_keywords
 from query_expander import expand_query
+import textwrap
 
 # === 初期設定 ===
 load_dotenv()
@@ -108,13 +108,13 @@ with open("system_prompt.txt", "r", encoding="utf-8") as f:
     base_prompt = f.read()
 
 def format_film_match_info(info):
-    lines = []
+    if not isinstance(info, dict):
+        return ""
+    lines = ["【製品カラー情報】"]
     for key, values in info.items():
-        if values:
-            lines.append(f"■ {key}：")
-            for v in values:
-                lines.append(f"・{v}")
-    return textwrap.indent("\n".join(lines), prefix="")
+        value_str = "、".join(values)
+        lines.append(f"- {key}：{value_str}")
+    return textwrap.fill("\n".join(lines), width=80)
 
 # === チャットエンドポイント ===
 @app.route("/chat", methods=["POST"])
@@ -148,10 +148,11 @@ def chat():
 
     # 製品フィルムマッチャーから補足情報を取得
     film_match_data = pf_matcher.match(user_q)
-    if isinstance(film_match_data, dict):
+    if isinstance(film_match_data, dict) and film_match_data:
         film_info_text = format_film_match_info(film_match_data)
-        reference_context.append(f"【製品カラー情報】\n{film_info_text}")
+        reference_context.append(film_info_text)
 
+    # metadata_note を GPTへの参考情報にのみ追加（検索には含めていない）
     if metadata_note:
         reference_context.append(f"【参考ファイル情報】{metadata_note}")
 
