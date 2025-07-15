@@ -80,10 +80,11 @@ index.add(vector_data)
 SPREADSHEET_ID = "1asbjzo-G9I6SmztBG18iWuiTKetOJK20JwAyPF11fA4"
 UNANSWERED_SHEET = "faq_suggestions"
 FEEDBACK_SHEET = "feedback_log"
-SERVICE_ACCOUNT_FILE = "credentials.json"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-credentials = service_account.Credentials.from_service_account_file(
-    SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+credentials_info = json.loads(os.environ["GOOGLE_CREDENTIALS"])
+credentials = service_account.Credentials.from_service_account_info(
+    credentials_info, scopes=SCOPES
+)
 sheet_service = build("sheets", "v4", credentials=credentials).spreadsheets()
 
 # === 補助ツール ===
