@@ -11,10 +11,10 @@ import time
 import base64
 from datetime import datetime
 from dotenv import load_dotenv
+import textwrap
 from product_film_matcher import ProductFilmMatcher
 from keyword_filter import extract_keywords
 from query_expander import expand_query
-import textwrap
 
 # === 初期設定 ===
 load_dotenv()
@@ -92,50 +92,34 @@ UNANSWERED_SHEET = "faq_suggestions"
 FEEDBACK_SHEET = "feedback_log"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
-credentials_info = json.loads(base64.b64decode(os.environ["GOOGLE_CREDENTIALS"]).decode("utf-8"))
-credentials = service_account.Credentials.from_service_account_info(credentials_info, scopes=SCOPES)
+credentials_info = json.loads(
+    base64.b64decode(os.environ["GOOGLE_CREDENTIALS"]).decode("utf-8")
+)
+credentials = service_account.Credentials.from_service_account_info(
+    credentials_info, scopes=SCOPES
+)
 sheet_service = build("sheets", "v4", credentials=credentials).spreadsheets()
 
+# === 補助ツール ===
 pf_matcher = ProductFilmMatcher("data/product_film_color_matrix.json")
 
 with open("system_prompt.txt", "r", encoding="utf-8") as f:
     base_prompt = f.read()
 
-# === film_match_info 整形関数 ===
-def format_film_match_info(info):
-    if not info.get("matched"):
-        return None
+def format_film_match_info(match_data):
+    if not match_data:
+        return ""
 
-    if info["type"] == "product_to_films":
-        return textwrap.dedent(f"""
-        【製品と対応フィルム】
-        ・製品種：{info['product']}
-        ・使用可能なフィルム：{', '.join(info['films'])}
-        """).strip()
-
-    elif info["type"] == "product_film_to_colors":
-        return textwrap.dedent(f"""
-        【製品＋フィルムと対応色】
-        ・製品種：{info['product']}
-        ・フィルム名：{info['film']}
-        ・対応可能な印刷色：{', '.join(info['colors'])}
-        """).strip()
-
-    elif info["type"] == "film_to_products":
-        return textwrap.dedent(f"""
-        【フィルムと対応製品】
-        ・フィルム名：{info['film']}
-        ・使用可能な製品：{', '.join(info['products'])}
-        """).strip()
-
-    elif info["type"] == "color_to_films":
-        return textwrap.dedent(f"""
-        【印刷色と対応フィルム】
-        ・印刷色：{info['color']}
-        ・対応可能なフィルム：{', '.join(info['films'])}
-        """).strip()
-
-    return None
+    lines = []
+    for product, info in match_data.items():
+        lines.append(f"◆ {product}")
+        for key, values in info.items():
+            if isinstance(values, list):
+                lines.append(f"・{key}：{', '.join(values)}")
+            else:
+                lines.append(f"・{key}：{values}")
+        lines.append("")
+    return textwrap.dedent("\n".join(lines)).strip()
 
 # === チャットエンドポイント ===
 @app.route("/chat", methods=["POST"])
@@ -167,11 +151,11 @@ def chat():
             ref_idx = idx - len(faq_questions)
             reference_context.append(f"【参考知識】{knowledge_contents[ref_idx]}")
 
-    # film_match_info 整形して追加
-    film_match_info = pf_matcher.match(user_q)
-    formatted_film_info = format_film_match_info(film_match_info)
-    if formatted_film_info:
-        reference_context.append(formatted_film_info)
+    # 製品フィルムマッチャーから補足情報を取得
+    film_match_data = pf_matcher.match(user_q)
+    film_info_text = format_film_match_info(film_match_data)
+    if film_info_text:
+        reference_context.append(f"【製品カラー情報】\n{film_info_text}")
 
     if metadata_note:
         reference_context.append(f"【参考ファイル情報】{metadata_note}")
@@ -203,7 +187,12 @@ def chat():
         answer = completion.choices[0].message.content
 
     if "申し訳" in answer:
-        new_row = [[datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_q, "未回答", 1]]
+        new_row = [[
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            user_q,
+            "未回答",
+            1
+        ]]
         sheet_service.values().append(
             spreadsheetId=SPREADSHEET_ID,
             range=f"{UNANSWERED_SHEET}!A2:D",
@@ -231,7 +220,13 @@ def feedback():
     if not all([question, answer, feedback_value]):
         return jsonify({"error": "不完全なフィードバックデータです"}), 400
 
-    row = [[datetime.now().strftime("%Y-%m-%d %H:%M:%S"), question, answer, feedback_value, reason]]
+    row = [[
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        question,
+        answer,
+        feedback_value,
+        reason
+    ]]
     sheet_service.values().append(
         spreadsheetId=SPREADSHEET_ID,
         range=f"{FEEDBACK_SHEET}!A2:E",
