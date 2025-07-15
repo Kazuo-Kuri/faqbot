@@ -1,5 +1,5 @@
 import json
-from keyword_filter import extract_keywords  # 追加：キーワード抽出を利用
+from keyword_filter import extract_keywords  # キーワード抽出モジュール
 
 class ProductFilmMatcher:
     def __init__(self, json_path="data/product_film_color_matrix.json"):
@@ -15,7 +15,7 @@ class ProductFilmMatcher:
             "matched": True,
             "product": product,
             "films": films,
-            "message": f"{product}で使用できるフィルムは：{', '.join(films)}です。"
+            "message": f"{product}で使用できるフィルムは以下の通りです：{', '.join(films)}。"
         }
 
     def get_colors_for_film_in_product(self, product_name, film_name):
@@ -61,33 +61,38 @@ class ProductFilmMatcher:
             }
         return {"matched": False, "message": "該当する印刷色が見つかりませんでした。"}
 
-    # ✅ 統合版 match(): ユーザーの入力からキーワードを抽出し、最適な情報を返す
     def match(self, user_input):
         keywords = extract_keywords(user_input)
 
-        # 色＋フィルム＋製品が全部ある場合（最も詳細な指定）
+        # ① 色 + フィルム + 製品（最も詳細な指定）
         if keywords["product"] and keywords["film"] and keywords["color"]:
             detail = self.get_colors_for_film_in_product(keywords["product"], keywords["film"])
             if detail["matched"]:
                 return detail["message"]
 
-        # 色 → フィルム（例：「シルバーは使えますか？」）
+        # ② 色 → フィルム
         if keywords["color"]:
             color_info = self.get_films_for_color(keywords["color"])
             if color_info["matched"]:
                 return color_info["message"]
 
-        # フィルム → 製品（例：「NY15を使える製品は？」）
+        # ③ フィルム → 製品
         if keywords["film"]:
             film_info = self.get_products_for_film(keywords["film"])
             if film_info["matched"]:
                 return film_info["message"]
 
-        # 製品 → フィルム（例：「チャック袋で使えるフィルムは？」）
+        # ④ 製品 → フィルム
         if keywords["product"]:
             prod_info = self.get_films_for_product(keywords["product"])
             if prod_info["matched"]:
                 return prod_info["message"]
 
-        # どれにもマッチしなかった
+        # ⑤ フォールバック：user_input に製品名が含まれているか直接スキャン
+        for product_name in self.data.keys():
+            if product_name in user_input:
+                films = list(self.data[product_name].keys())
+                if films:
+                    return f"{product_name}で使用できるフィルムは以下の通りです：{', '.join(films)}。"
+
         return None
