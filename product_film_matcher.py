@@ -1,5 +1,5 @@
 import json
-from keyword_filter import extract_keywords  # キーワード抽出モジュール
+from keyword_filter import extract_keywords
 
 class ProductFilmMatcher:
     def __init__(self, json_path="data/product_film_color_matrix.json"):
@@ -13,9 +13,9 @@ class ProductFilmMatcher:
         films = list(self.data[product].keys())
         return {
             "matched": True,
+            "type": "product_to_films",
             "product": product,
-            "films": films,
-            "message": f"{product}で使用できるフィルムは以下の通りです：{', '.join(films)}。"
+            "films": films
         }
 
     def get_colors_for_film_in_product(self, product_name, film_name):
@@ -25,10 +25,10 @@ class ProductFilmMatcher:
                     if film_name in film:
                         return {
                             "matched": True,
+                            "type": "product_film_to_colors",
                             "product": product,
                             "film": film,
-                            "colors": colors,
-                            "message": f"{product}の{film}では以下の色が使用できます：{', '.join(colors)}。"
+                            "colors": colors
                         }
         return {"matched": False, "message": "該当する製品とフィルムの組み合わせが見つかりませんでした。"}
 
@@ -40,9 +40,9 @@ class ProductFilmMatcher:
         if matched_products:
             return {
                 "matched": True,
+                "type": "film_to_products",
                 "film": film_name,
-                "products": matched_products,
-                "message": f"{film_name}を使用できる製品は：{', '.join(matched_products)}です。"
+                "products": matched_products
             }
         return {"matched": False, "message": "該当するフィルムに対応する製品が見つかりませんでした。"}
 
@@ -55,44 +55,34 @@ class ProductFilmMatcher:
         if matched:
             return {
                 "matched": True,
+                "type": "color_to_films",
                 "color": color_name,
-                "films": list(matched),
-                "message": f"{color_name}の印刷が可能なフィルムは：{', '.join(matched)}です。"
+                "films": list(matched)
             }
         return {"matched": False, "message": "該当する印刷色が見つかりませんでした。"}
 
     def match(self, user_input):
         keywords = extract_keywords(user_input)
+        product = keywords.get("product")
+        film = keywords.get("film")
+        color = keywords.get("color")
 
-        # ① 色 + フィルム + 製品（最も詳細な指定）
-        if keywords["product"] and keywords["film"] and keywords["color"]:
-            detail = self.get_colors_for_film_in_product(keywords["product"], keywords["film"])
-            if detail["matched"]:
-                return detail["message"]
+        if product and film and color:
+            # 3つ揃っている場合は色に対応するフィルムを確認
+            color_info = self.get_colors_for_film_in_product(product, film)
+            if color_info["matched"] and color in color_info.get("colors", []):
+                return color_info
 
-        # ② 色 → フィルム
-        if keywords["color"]:
-            color_info = self.get_films_for_color(keywords["color"])
-            if color_info["matched"]:
-                return color_info["message"]
+        if product and film:
+            return self.get_colors_for_film_in_product(product, film)
 
-        # ③ フィルム → 製品
-        if keywords["film"]:
-            film_info = self.get_products_for_film(keywords["film"])
-            if film_info["matched"]:
-                return film_info["message"]
+        if product:
+            return self.get_films_for_product(product)
 
-        # ④ 製品 → フィルム
-        if keywords["product"]:
-            prod_info = self.get_films_for_product(keywords["product"])
-            if prod_info["matched"]:
-                return prod_info["message"]
+        if film:
+            return self.get_products_for_film(film)
 
-        # ⑤ フォールバック：user_input に製品名が含まれているか直接スキャン
-        for product_name in self.data.keys():
-            if product_name in user_input:
-                films = list(self.data[product_name].keys())
-                if films:
-                    return f"{product_name}で使用できるフィルムは以下の通りです：{', '.join(films)}。"
+        if color:
+            return self.get_films_for_color(color)
 
-        return None
+        return {"matched": False, "message": "製品・フィルム・色のいずれも見つかりませんでした。"}
