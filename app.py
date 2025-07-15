@@ -63,7 +63,7 @@ if os.path.exists(metadata_path):
         metadata = json.load(f)
         metadata_note = f"{metadata.get('title', '')}（種類：{metadata.get('type', '')}、優先度：{metadata.get('priority', '')}）"
 
-# === コーパス定義（順序維持が重要）===
+# === コーパス定義 ===
 search_corpus = faq_questions + knowledge_contents  # metadata_note は検索対象に含めない
 source_flags = ["faq"] * len(faq_questions) + ["knowledge"] * len(knowledge_contents)
 
@@ -76,7 +76,6 @@ def get_embedding(text):
     response = openai.embeddings.create(model=EMBED_MODEL, input=text)
     return np.array(response.data[0].embedding, dtype="float32")
 
-# キャッシュロード（存在しない場合は作成）
 if os.path.exists(VECTOR_PATH) and os.path.exists(INDEX_PATH):
     vector_data = np.load(VECTOR_PATH)
     index = faiss.read_index(INDEX_PATH)
@@ -88,7 +87,7 @@ else:
     faiss.write_index(index, INDEX_PATH)
 
 # === Google Sheets設定 ===
-SPREADSHEET_ID = "1asbjzo-G9I6SmztBG18iWuiTKetOJK20JwAyPF11fA4"
+SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 UNANSWERED_SHEET = "faq_suggestions"
 FEEDBACK_SHEET = "feedback_log"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
@@ -112,7 +111,10 @@ def format_film_match_info(info):
         return ""
     lines = ["【製品カラー情報】"]
     for key, values in info.items():
-        value_str = "、".join(values)
+        if isinstance(values, (list, tuple)):
+            value_str = "、".join(values)
+        else:
+            value_str = str(values)
         lines.append(f"- {key}：{value_str}")
     return textwrap.fill("\n".join(lines), width=80)
 
@@ -146,13 +148,11 @@ def chat():
             ref_idx = idx - len(faq_questions)
             reference_context.append(f"【参考知識】{knowledge_contents[ref_idx]}")
 
-    # 製品フィルムマッチャーから補足情報を取得
     film_match_data = pf_matcher.match(user_q)
-    if isinstance(film_match_data, dict) and film_match_data:
-        film_info_text = format_film_match_info(film_match_data)
+    film_info_text = format_film_match_info(film_match_data)
+    if film_info_text:
         reference_context.append(film_info_text)
 
-    # metadata_note を GPTへの参考情報にのみ追加（検索には含めていない）
     if metadata_note:
         reference_context.append(f"【参考ファイル情報】{metadata_note}")
 
