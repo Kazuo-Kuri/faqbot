@@ -18,20 +18,6 @@ class ProductFilmMatcher:
             "films": films
         }
 
-    def get_colors_for_product(self, product_name):
-        product = next((p for p in self.data if p in product_name), None)
-        if not product:
-            return {"matched": False, "message": "該当する製品種が見つかりませんでした。"}
-        color_set = set()
-        for colors in self.data[product].values():
-            color_set.update(colors)
-        return {
-            "matched": True,
-            "type": "product_to_colors",
-            "product": product,
-            "colors": sorted(color_set)
-        }
-
     def get_colors_for_film_in_product(self, product_name, film_name):
         for product, films in self.data.items():
             if product_name in product:
@@ -106,55 +92,59 @@ class ProductFilmMatcher:
         return {"matched": False, "message": "印刷色に対応するフィルム色が見つかりませんでした。"}
 
     def match(self, user_input, history=None):
-        keywords = extract_keywords(user_input)
+        try:
+            keywords = extract_keywords(user_input)
+            if not isinstance(keywords, dict):
+                return {"matched": False, "type": "no_match", "message": "キーワード抽出でエラーが発生しました。"}
 
-        products = keywords.get("product", [])
-        films = keywords.get("film", [])
-        colors = keywords.get("color", [])
+            products = keywords.get("product") or []
+            films = keywords.get("film") or []
+            colors = keywords.get("color") or []
 
-        if products and films and colors:
-            for p in products:
+            if not isinstance(products, list): products = []
+            if not isinstance(films, list): films = []
+            if not isinstance(colors, list): colors = []
+
+            if products and films and colors:
+                for p in products:
+                    for f in films:
+                        info = self.get_colors_for_film_in_product(p, f)
+                        if info["matched"] and any(c in info.get("colors", []) for c in colors):
+                            return info
+
+            if products and films:
+                for p in products:
+                    for f in films:
+                        info = self.get_colors_for_film_in_product(p, f)
+                        if info["matched"]:
+                            return info
+
+            if products:
+                for p in products:
+                    result = self.get_films_for_product(p)
+                    if result["matched"]:
+                        return result
+
+            if films:
                 for f in films:
-                    info = self.get_colors_for_film_in_product(p, f)
-                    if info["matched"] and any(c in info["colors"] for c in colors):
-                        return info
+                    result = self.get_products_for_film(f)
+                    if result["matched"]:
+                        return result
 
-        if products and films:
-            for p in products:
-                for f in films:
-                    info = self.get_colors_for_film_in_product(p, f)
-                    if info["matched"]:
-                        return info
+            if colors:
+                for getter in [
+                    self.get_products_for_color,
+                    self.get_film_colors_for_color,
+                    self.get_films_for_color
+                ]:
+                    result = getter(colors)
+                    if result["matched"]:
+                        return result
 
-        if products and colors:
-            for p in products:
-                result = self.get_colors_for_product(p)
-                if result["matched"]:
-                    return result
+            return {"matched": False, "type": "no_match", "message": "製品・フィルム・色のいずれも見つかりませんでした。"}
 
-        if products:
-            for p in products:
-                result = self.get_films_for_product(p)
-                if result["matched"]:
-                    return result
-
-        if films:
-            for f in films:
-                result = self.get_products_for_film(f)
-                if result["matched"]:
-                    return result
-
-        if colors:
-            for getter in [
-                self.get_products_for_color,
-                self.get_film_colors_for_color,
-                self.get_films_for_color
-            ]:
-                result = getter(colors)
-                if result["matched"]:
-                    return result
-
-        return {"matched": False, "type": "no_match", "message": "製品・フィルム・色のいずれも見つかりませんでした。"}
+        except Exception as e:
+            return {"matched": False, "type": "error", "message": f"マッチ処理中にエラーが発生しました：{str(e)}"}
 
     def format_match_info(self, info):
         if not isinstance(info, dict):
@@ -167,15 +157,9 @@ class ProductFilmMatcher:
             lines.append(f"- 製品「{info['product']}」で選択可能なフィルム：")
             lines.append(f"- {', '.join(info['films'])}")
 
-        elif match_type == "product_to_colors":
-            lines.append(f"- 製品「{info['product']}」で選択可能な印刷色：")
-            lines.append(f"- {', '.join(info['colors'])}")
-            lines.append("\nこれらの色はすべて表面単色印刷でご利用いただけます。")
-
         elif match_type == "product_film_to_colors":
             lines.append(f"- 「{info['product']} × {info['film']}」で使用可能な印刷色：")
             lines.append(f"- {', '.join(info['colors'])}")
-            lines.append("\nこれらの色はすべて表面単色印刷として対応可能です。")
 
         elif match_type == "film_to_products":
             lines.append(f"- フィルム「{info['film']}」が使用できる製品：")
@@ -188,7 +172,7 @@ class ProductFilmMatcher:
         elif match_type == "color_to_products":
             lines.append(f"- 印刷色「{info['color']}」に対応可能な製品：")
             lines.append(f"- {', '.join(info['products'])}")
-            lines.append(f"\nこれらの製品では、印刷色「{info['color']}」を表面単色印刷として選択することが可能です。")
+            lines.append(f"これらの製品では、{info['color']}の印刷色を選択することが可能です。")
 
         elif match_type == "color_to_film_colors":
             lines.append(f"- 印刷色「{info['color']}」に対応可能なフィルム（製品問わず）：")
