@@ -133,6 +133,10 @@ def format_film_match_info(info):
         lines.append(f"- 印刷色「{info['color']}」が使用可能な製品")
         lines.append(f"- 製品：{', '.join(info['products'])}")
 
+    elif match_type == "color_to_film_colors":
+        lines.append(f"- 印刷色「{info['color']}」が使用可能なフィルム色")
+        lines.append(f"- フィルム色：{', '.join(info['film_colors'])}")
+
     else:
         return ""
 
@@ -170,10 +174,10 @@ def chat():
             ref_idx = idx - len(faq_questions)
             reference_context.append(f"【参考知識】{knowledge_contents[ref_idx]}")
 
-    film_match_data = pf_matcher.match(user_q)
+    film_match_data = pf_matcher.match(user_q, session_history)
     film_info_text = format_film_match_info(film_match_data)
     if film_info_text:
-        reference_context.insert(0, film_info_text)  # 優先的に含める
+        reference_context.insert(0, film_info_text)
 
     if metadata_note:
         reference_context.append(f"【参考ファイル情報】{metadata_note}")
@@ -229,7 +233,6 @@ def chat():
         "expanded_question": expanded_q
     })
 
-# === フィードバック記録 ===
 @app.route("/feedback", methods=["POST"])
 def feedback():
     data = request.get_json()
