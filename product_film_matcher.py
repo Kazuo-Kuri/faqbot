@@ -6,6 +6,21 @@ class ProductFilmMatcher:
         with open(json_path, "r", encoding="utf-8") as f:
             self.data = json.load(f)
 
+    def get_colors_for_product(self, product_name):
+        matched_colors = set()
+        for product, films in self.data.items():
+            if product_name in product:
+                for color_list in films.values():
+                    matched_colors.update(color_list)
+        if matched_colors:
+            return {
+                "matched": True,
+                "type": "product_to_colors",
+                "product": product_name,
+                "colors": sorted(matched_colors)
+            }
+        return {"matched": False, "message": f"{product_name} に対応する印刷色が見つかりませんでした。"}
+
     def get_films_for_product(self, product_name):
         product = next((p for p in self.data if p in product_name), None)
         if not product:
@@ -72,7 +87,6 @@ class ProductFilmMatcher:
                 "matched": True,
                 "type": "color_to_products",
                 "color": ", ".join(color_names),
-                "colors": color_names,
                 "products": list(matched_products)
             }
         return {"matched": False, "message": "該当する印刷色に対応する製品が見つかりませんでした。"}
@@ -94,10 +108,12 @@ class ProductFilmMatcher:
 
     def match(self, user_input, history=None):
         keywords = extract_keywords(user_input)
+
         products = keywords.get("product", [])
         films = keywords.get("film", [])
         colors = keywords.get("color", [])
 
+        # product × film × color
         if products and films and colors:
             for p in products:
                 for f in films:
@@ -105,6 +121,7 @@ class ProductFilmMatcher:
                     if info["matched"] and any(c in info["colors"] for c in colors):
                         return info
 
+        # product × film
         if products and films:
             for p in products:
                 for f in films:
@@ -112,18 +129,26 @@ class ProductFilmMatcher:
                     if info["matched"]:
                         return info
 
+        # product → colors 優先（色を知りたいという質問対応）
         if products:
+            for p in products:
+                color_info = self.get_colors_for_product(p)
+                if color_info["matched"]:
+                    return color_info
+            # 次に films を返す
             for p in products:
                 result = self.get_films_for_product(p)
                 if result["matched"]:
                     return result
 
+        # film → product
         if films:
             for f in films:
                 result = self.get_products_for_film(f)
                 if result["matched"]:
                     return result
 
+        # color → product / film
         if colors:
             for getter in [
                 self.get_products_for_color,
@@ -139,6 +164,7 @@ class ProductFilmMatcher:
     def format_match_info(self, info):
         if not isinstance(info, dict):
             return ""
+
         match_type = info.get("type")
         lines = ["【製品フィルム・カラー情報】"]
 
@@ -149,7 +175,11 @@ class ProductFilmMatcher:
         elif match_type == "product_film_to_colors":
             lines.append(f"- 「{info['product']} × {info['film']}」で使用可能な印刷色：")
             lines.append(f"- {', '.join(info['colors'])}")
-            lines.append("これらの印刷色は、**表面単色印刷**としてご利用いただけます。")
+
+        elif match_type == "product_to_colors":
+            lines.append(f"- 製品「{info['product']}」では、以下の印刷色を**選択**することが可能です：")
+            lines.append(f"- {', '.join(info['colors'])}")
+            lines.append("これらはすべて**表面単色印刷**としてご利用いただけます。")
 
         elif match_type == "film_to_products":
             lines.append(f"- フィルム「{info['film']}」が使用できる製品：")
@@ -160,11 +190,9 @@ class ProductFilmMatcher:
             lines.append(f"- {', '.join(info['films'])}")
 
         elif match_type == "color_to_products":
-            lines.append(f"- 以下の印刷色に対応可能な製品：")
-            for color in info["colors"]:
-                lines.append(f"  - 色「{color}」：{', '.join(info['products'])}")
-            lines.append("\nこれらの製品では、上記の印刷色を**選択**することが可能です。")
-            lines.append("これらの印刷色は、**表面単色印刷**としてご利用いただけます。")
+            lines.append(f"- 印刷色「{info['color']}」に対応可能な製品：")
+            lines.append(f"- {', '.join(info['products'])}")
+            lines.append(f"\nこれらの製品では、{info['color']}の印刷色を**選択**することが可能です。")
 
         elif match_type == "color_to_film_colors":
             lines.append(f"- 印刷色「{info['color']}」に対応可能なフィルム（製品問わず）：")
