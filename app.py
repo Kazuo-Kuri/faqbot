@@ -74,7 +74,7 @@ def get_embedding(text):
         )
         return np.array(response.data[0].embedding, dtype="float32")
     except Exception as e:
-        print("❌ Embedding error:", e)
+        print("\u274c Embedding error:", e)
         raise
 
 if os.path.exists(VECTOR_PATH) and os.path.exists(INDEX_PATH):
