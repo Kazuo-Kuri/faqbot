@@ -15,16 +15,16 @@ from product_film_matcher import ProductFilmMatcher
 from keyword_filter import extract_keywords
 from query_expander import expand_query
 
-# === 初期設定 ===
+# === Initial Setup ===
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 app = Flask(__name__)
 CORS(app)
 
-# === セッション履歴管理 ===
+# === Session History Management ===
 session_histories = {}
-HISTORY_TTL = 1800  # 30分
+HISTORY_TTL = 1800
 
 def get_session_history(session_id):
     now = time.time()
@@ -41,7 +41,7 @@ def add_to_session_history(session_id, role, content):
     if len(history) > 10:
         history[:] = history[-10:]
 
-# === データ読み込み ===
+# === Load Data ===
 with open("data/faq.json", "r", encoding="utf-8") as f:
     faq_items = json.load(f)
 faq_questions = [item["question"] for item in faq_items]
@@ -60,13 +60,12 @@ metadata_path = "data/metadata.json"
 if os.path.exists(metadata_path):
     with open(metadata_path, "r", encoding="utf-8") as f:
         metadata = json.load(f)
-        metadata_note = f"{metadata.get('title', '')}（種類：{metadata.get('type', '')}、優先度：{metadata.get('priority', '')}）"
+        metadata_note = f"{metadata.get('title', '')} (種類: {metadata.get('type', '')}, 優先度: {metadata.get('priority', '')})"
 
-# === コーパス定義 ===
+# === Corpus & Embedding ===
 search_corpus = faq_questions + knowledge_contents
 source_flags = ["faq"] * len(faq_questions) + ["knowledge"] * len(knowledge_contents)
 
-# === EmbeddingとFAISSインデックス ===
 EMBED_MODEL = "text-embedding-3-small"
 VECTOR_PATH = "data/vector_data.npy"
 INDEX_PATH = "data/index.faiss"
@@ -85,27 +84,23 @@ else:
     np.save(VECTOR_PATH, vector_data)
     faiss.write_index(index, INDEX_PATH)
 
-# === Google Sheets設定 ===
+# === Google Sheets ===
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 UNANSWERED_SHEET = "faq_suggestions"
 FEEDBACK_SHEET = "feedback_log"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
-credentials_info = json.loads(
-    base64.b64decode(os.environ["GOOGLE_CREDENTIALS"]).decode("utf-8")
-)
-credentials = service_account.Credentials.from_service_account_info(
-    credentials_info, scopes=SCOPES
-)
+credentials_info = json.loads(base64.b64decode(os.environ["GOOGLE_CREDENTIALS"]).decode("utf-8"))
+credentials = service_account.Credentials.from_service_account_info(credentials_info, scopes=SCOPES)
 sheet_service = build("sheets", "v4", credentials=credentials).spreadsheets()
 
-# === 補助ツール ===
+# === Utilities ===
 pf_matcher = ProductFilmMatcher("data/product_film_color_matrix.json")
 
 with open("system_prompt.txt", "r", encoding="utf-8") as f:
     base_prompt = f.read()
 
-# === チャットエンドポイント ===
+# === Chat Endpoint ===
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json()
@@ -136,7 +131,7 @@ def chat():
             reference_context.append(f"【参考知識】{knowledge_contents[ref_idx]}")
 
     film_match_data = pf_matcher.match(user_q, session_history)
-    film_info_text = pf_matcher.format_match_info(film_match_data)
+    film_info_text = pf_matcher.format_match_info(film_match_data, fallback=True)
     if film_info_text:
         reference_context.insert(0, film_info_text)
 

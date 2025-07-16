@@ -9,7 +9,7 @@ class ProductFilmMatcher:
     def get_films_for_product(self, product_name):
         product = next((p for p in self.data if p in product_name), None)
         if not product:
-            return {"matched": False, "message": "該当する製品種が見つかりませんでした。"}
+            return {"matched": False, "type": "product_to_films", "message": "該当する製品種が見つかりませんでした。"}
         films = list(self.data[product].keys())
         return {
             "matched": True,
@@ -30,7 +30,7 @@ class ProductFilmMatcher:
                             "film": film,
                             "colors": colors
                         }
-        return {"matched": False, "message": "該当する製品とフィルムの組み合わせが見つかりませんでした。"}
+        return {"matched": False, "type": "product_film_to_colors", "message": "該当する製品とフィルムの組み合わせが見つかりませんでした。"}
 
     def get_products_for_film(self, film_name):
         matched_products = []
@@ -44,7 +44,7 @@ class ProductFilmMatcher:
                 "film": film_name,
                 "products": matched_products
             }
-        return {"matched": False, "message": "該当するフィルムに対応する製品が見つかりませんでした。"}
+        return {"matched": False, "type": "film_to_products", "message": "該当するフィルムに対応する製品が見つかりませんでした。"}
 
     def get_films_for_color(self, color_names):
         matched = set()
@@ -59,7 +59,7 @@ class ProductFilmMatcher:
                 "color": ", ".join(color_names),
                 "films": list(matched)
             }
-        return {"matched": False, "message": "該当する印刷色が見つかりませんでした。"}
+        return {"matched": False, "type": "color_to_films", "message": "該当する印刷色が見つかりませんでした。"}
 
     def get_products_for_color(self, color_names):
         matched_products = set()
@@ -74,7 +74,7 @@ class ProductFilmMatcher:
                 "color": ", ".join(color_names),
                 "products": list(matched_products)
             }
-        return {"matched": False, "message": "該当する印刷色に対応する製品が見つかりませんでした。"}
+        return {"matched": False, "type": "color_to_products", "message": "該当する印刷色に対応する製品が見つかりませんでした。"}
 
     def get_film_colors_for_color(self, color_names):
         matched_colors = set()
@@ -89,7 +89,7 @@ class ProductFilmMatcher:
                 "color": ", ".join(color_names),
                 "film_colors": list(matched_colors)
             }
-        return {"matched": False, "message": "印刷色に対応するフィルム色が見つかりませんでした。"}
+        return {"matched": False, "type": "color_to_film_colors", "message": "印刷色に対応するフィルム色が見つかりませんでした。"}
 
     def match(self, user_input, history=None):
         try:
@@ -141,24 +141,20 @@ class ProductFilmMatcher:
                     if result["matched"]:
                         return result
 
-            return {"matched": False, "type": "no_match", "message": "製品・フィルム・色のいずれも見つかりませんでした。"}
+            return {"matched": False, "type": "no_match", "message": "製品・フィルム・色のいずれも該当する情報が見つかりませんでした。"}
 
         except Exception as e:
             return {"matched": False, "type": "error", "message": f"マッチ処理中にエラーが発生しました：{str(e)}"}
 
     def format_match_info(self, info):
         if not isinstance(info, dict):
-            return ""
+            return "【製品フィルム・カラー情報】製品・フィルム・印刷色に関する情報が見つかりませんでした。"
 
-        lines = ["【製品フィルム・カラー情報】"]
+        if not info.get("matched", False):
+            return f"【製品フィルム・カラー情報】{info.get('message', '該当情報が見つかりませんでした。')}"
+
         match_type = info.get("type")
-
-        if not info.get("matched"):
-            return (
-                "【製品フィルム・カラー情報】\n"
-                "ご希望の製品・フィルム・印刷色の組み合わせが見つかりませんでした。\n"
-                "詳細は当社の【お問い合わせフォーム】よりご相談ください。"
-            )
+        lines = ["【製品フィルム・カラー情報】"]
 
         if match_type == "product_to_films":
             lines.append(f"- 製品「{info['product']}」で選択可能なフィルム：")
