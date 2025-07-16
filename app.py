@@ -116,6 +116,7 @@ def chat():
     expanded_q = expand_query(user_q, session_history)
     q_vector = get_embedding(expanded_q)
 
+    # FAQ・Knowledge検索
     D, I = index.search(np.array([q_vector]), k=7)
     faq_context = []
     reference_context = []
@@ -130,16 +131,23 @@ def chat():
             ref_idx = idx - len(faq_questions)
             reference_context.append(f"【参考知識】{knowledge_contents[ref_idx]}")
 
-    film_match_data = pf_matcher.match(user_q, session_history)
-    film_info_text = pf_matcher.format_match_info(film_match_data, fallback=True)
-    if film_info_text:
-        reference_context.insert(0, film_info_text)
+    # 製品・フィルム・色マッチング（該当すれば追加、失敗しても続行）
+    try:
+        film_match_data = pf_matcher.match(user_q, session_history)
+        if film_match_data.get("matched"):
+            film_info_text = pf_matcher.format_match_info(film_match_data)
+            if film_info_text:
+                reference_context.insert(0, film_info_text)
+    except Exception:
+        pass  # film_matcherの失敗は無視して進行
 
+    # 参考ファイルメモ
     if metadata_note:
         reference_context.append(f"【参考ファイル情報】{metadata_note}")
 
+    # 回答構築
     if not faq_context and not reference_context:
-        answer = "申し訳ございません。ただいまこちらで確認中です。詳細が分かり次第、改めてご案内いたします。"
+        answer = "申し訳ございません。該当情報が見つかりませんでした。当社の【お問い合わせフォーム】よりご連絡ください。"
     else:
         faq_part = "\n\n".join(faq_context[:3]) if faq_context else "該当するFAQは見つかりませんでした。"
         ref_texts = [text for text in reference_context if "製品フィルム・カラー情報" in text]
@@ -221,4 +229,3 @@ def home():
     return "Integrated Chatbot API is running."
 
 if __name__ == "__main__":
-    app.run(debug=True)
