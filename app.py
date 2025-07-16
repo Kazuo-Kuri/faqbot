@@ -147,7 +147,7 @@ def chat():
             reference_context.append(f"【参考ファイル情報】{metadata_note}")
 
         # 🎯 完全に該当なしのときはテンプレート回答で返す
-        if not faq_context and not reference_context and not film_info_text:
+        if not faq_context and not reference_context and not film_info_text.strip():
             answer = (
                 "当社はコーヒー製品の委託加工を専門とする会社です。"
                 "恐れ入りますが、ご質問内容が当社業務と直接関連のある内容かどうかをご確認のうえ、"
@@ -190,7 +190,7 @@ def chat():
             )
         answer = completion.choices[0].message.content
 
-        if "申し訳" in answer or "恐れ入りますが" in answer:
+        if "申し訳" in answer or "恐れ入りますが" in answer or "エラー" in answer:
             new_row = [[
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 user_q,
