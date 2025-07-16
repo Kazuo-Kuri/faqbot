@@ -96,50 +96,50 @@ with open("system_prompt.txt", "r", encoding="utf-8") as f:
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    try:
-        data = request.get_json()
-        user_q = data.get("question")
-        session_id = data.get("session_id", "default")
+    data = request.get_json()
+    user_q = data.get("question")
+    customer_attrs = data.get("attributes", {})
+    session_id = data.get("session_id", "default")
 
-        if not user_q:
-            return jsonify({"error": "質問がありません"}), 400
+    if not user_q:
+        return jsonify({"error": "質問がありません"}), 400
 
-        add_to_session_history(session_id, "user", user_q)
-        session_history = get_session_history(session_id)
-        expanded_q = expand_query(user_q, session_history)
-        q_vector = get_embedding(expanded_q)
+    add_to_session_history(session_id, "user", user_q)
+    session_history = get_session_history(session_id)
+    expanded_q = expand_query(user_q, session_history)
+    q_vector = get_embedding(expanded_q)
 
-        D, I = index.search(np.array([q_vector]), k=7)
-        faq_context = []
-        reference_context = []
+    D, I = index.search(np.array([q_vector]), k=7)
+    faq_context = []
+    reference_context = []
 
-        for idx in I[0]:
-            src = source_flags[idx]
-            if src == "faq":
-                q = faq_questions[idx]
-                a = faq_answers[idx]
-                faq_context.append(f"Q: {q}\nA: {a}")
-            elif src == "knowledge":
-                ref_idx = idx - len(faq_questions)
-                reference_context.append(f"【参考知識】{knowledge_contents[ref_idx]}")
+    for idx in I[0]:
+        src = source_flags[idx]
+        if src == "faq":
+            q = faq_questions[idx]
+            a = faq_answers[idx]
+            faq_context.append(f"Q: {q}\nA: {a}")
+        elif src == "knowledge":
+            ref_idx = idx - len(faq_questions)
+            reference_context.append(f"【参考知識】{knowledge_contents[ref_idx]}")
 
-        film_match_data = pf_matcher.match(user_q, session_history)
-        film_info_text = pf_matcher.format_match_info(film_match_data, fallback=True)
-        if film_info_text:
-            reference_context.insert(0, film_info_text)
+    film_match_data = pf_matcher.match(user_q, session_history)
+    film_info_text = pf_matcher.format_match_info(film_match_data, fallback=True)
+    if film_info_text:
+        reference_context.insert(0, film_info_text)
 
-        if metadata_note:
-            reference_context.append(f"【参考ファイル情報】{metadata_note}")
+    if metadata_note:
+        reference_context.append(f"【参考ファイル情報】{metadata_note}")
 
-        if not faq_context and not reference_context:
-            answer = "申し訳ございません。ただいまこちらで確認中です。詳細が分かり次第、改めてご案内いたします。"
-        else:
-            faq_part = "\n\n".join(faq_context[:3]) if faq_context else "該当するFAQは見つかりませんでした。"
-            ref_texts = [text for text in reference_context if "製品フィルム・カラー情報" in text]
-            other_refs = [text for text in reference_context if "製品フィルム・カラー情報" not in text][:2]
-            ref_part = "\n".join(ref_texts + other_refs)
+    if not faq_context and not reference_context:
+        answer = "申し訳ございません。ただいまこちらで確認中です。詳細が分かり次第、改めてご案内いたします。"
+    else:
+        faq_part = "\n\n".join(faq_context[:3]) if faq_context else "該当するFAQは見つかりませんでした。"
+        ref_texts = [text for text in reference_context if "製品フィルム・カラー情報" in text]
+        other_refs = [text for text in reference_context if "製品フィルム・カラー情報" not in text][:2]
+        ref_part = "\n".join(ref_texts + other_refs)
 
-            prompt = f"""以下は当社のFAQおよび参考情報です。これらを参考に、ユーザーの質問に製造元の立場でご回答ください。
+        prompt = f"""以下は当社のFAQおよび参考情報です。これらを参考に、ユーザーの質問に製造元の立場でご回答ください。
 
 【FAQ】
 {faq_part}
@@ -150,8 +150,7 @@ def chat():
 ユーザーの質問: {user_q}
 回答:"""
 
-            print("=== PROMPT ===\n", prompt)
-
+        try:
             completion = openai.chat.completions.create(
                 model="gpt-4o",
                 messages=[
@@ -161,31 +160,32 @@ def chat():
                 temperature=0.2,
             )
             answer = completion.choices[0].message.content
+        except Exception as e:
+            print("❌ GPT呼び出しエラー:", e)
+            print("📥 送信プロンプト先頭500文字:\n", prompt[:500])
+            answer = "エラーが発生しました。"
 
-        if "申し訳" in answer:
-            new_row = [[
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                user_q,
-                "未回答",
-                1
-            ]]
-            sheet_service.values().append(
-                spreadsheetId=SPREADSHEET_ID,
-                range=f"{UNANSWERED_SHEET}!A2:D",
-                valueInputOption="RAW",
-                body={"values": new_row}
-            ).execute()
+    if "申し訳" in answer:
+        new_row = [[
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            user_q,
+            "未回答",
+            1
+        ]]
+        sheet_service.values().append(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{UNANSWERED_SHEET}!A2:D",
+            valueInputOption="RAW",
+            body={"values": new_row}
+        ).execute()
 
-        add_to_session_history(session_id, "assistant", answer)
+    add_to_session_history(session_id, "assistant", answer)
 
-        return jsonify({
-            "response": answer,
-            "original_question": user_q,
-            "expanded_question": expanded_q
-        })
-    except Exception as e:
-        print("[ERROR in /chat]:", e)
-        return jsonify({"response": "エラーが発生しました。", "error": str(e)}), 500
+    return jsonify({
+        "response": answer,
+        "original_question": user_q,
+        "expanded_question": expanded_q
+    })
 
 @app.route("/feedback", methods=["POST"])
 def feedback():
