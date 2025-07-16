@@ -15,14 +15,12 @@ from product_film_matcher import ProductFilmMatcher
 from keyword_filter import extract_keywords
 from query_expander import expand_query
 
-# === 初期設定 ===
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 app = Flask(__name__)
 CORS(app)
 
-# === セッション履歴管理 ===
 session_histories = {}
 HISTORY_TTL = 1800
 
@@ -41,7 +39,6 @@ def add_to_session_history(session_id, role, content):
     if len(history) > 10:
         history[:] = history[-10:]
 
-# === データ読み込み ===
 with open("data/faq.json", "r", encoding="utf-8") as f:
     faq_items = json.load(f)
 faq_questions = [item["question"] for item in faq_items]
@@ -60,9 +57,8 @@ metadata_path = "data/metadata.json"
 if os.path.exists(metadata_path):
     with open(metadata_path, "r", encoding="utf-8") as f:
         metadata = json.load(f)
-        metadata_note = f"{metadata.get('title', '')}（種類：{metadata.get('type', '')}、優先度：{metadata.get('priority', '')}）"
+        metadata_note = f"{metadata.get('title', '')} (種類: {metadata.get('type', '')}, 優先度: {metadata.get('priority', '')})"
 
-# === コーパスとベクトル ===
 search_corpus = faq_questions + knowledge_contents
 source_flags = ["faq"] * len(faq_questions) + ["knowledge"] * len(knowledge_contents)
 
@@ -84,7 +80,6 @@ else:
     np.save(VECTOR_PATH, vector_data)
     faiss.write_index(index, INDEX_PATH)
 
-# === Google Sheets設定 ===
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 UNANSWERED_SHEET = "faq_suggestions"
 FEEDBACK_SHEET = "feedback_log"
@@ -94,13 +89,11 @@ credentials_info = json.loads(base64.b64decode(os.environ["GOOGLE_CREDENTIALS"])
 credentials = service_account.Credentials.from_service_account_info(credentials_info, scopes=SCOPES)
 sheet_service = build("sheets", "v4", credentials=credentials).spreadsheets()
 
-# === 補助クラスやプロンプト ===
 pf_matcher = ProductFilmMatcher("data/product_film_color_matrix.json")
 
 with open("system_prompt.txt", "r", encoding="utf-8") as f:
     base_prompt = f.read()
 
-# === チャットエンドポイント ===
 @app.route("/chat", methods=["POST"])
 def chat():
     try:
@@ -113,18 +106,9 @@ def chat():
 
         add_to_session_history(session_id, "user", user_q)
         session_history = get_session_history(session_id)
-
-        # 拡張質問とベクトル
         expanded_q = expand_query(user_q, session_history)
         q_vector = get_embedding(expanded_q)
 
-        # フィルム情報マッチング
-        film_match_data = pf_matcher.match(user_q, session_history)
-        film_info_text = ""
-        if film_match_data.get("matched") or film_match_data.get("type") == "no_match":
-            film_info_text = pf_matcher.format_match_info(film_match_data)
-
-        # FAQ・ナレッジ検索
         D, I = index.search(np.array([q_vector]), k=7)
         faq_context = []
         reference_context = []
@@ -132,23 +116,27 @@ def chat():
         for idx in I[0]:
             src = source_flags[idx]
             if src == "faq":
-                faq_context.append(f"Q: {faq_questions[idx]}\nA: {faq_answers[idx]}")
-            else:
-                reference_context.append(f"【参考知識】{knowledge_contents[idx - len(faq_questions)]}")
+                q = faq_questions[idx]
+                a = faq_answers[idx]
+                faq_context.append(f"Q: {q}\nA: {a}")
+            elif src == "knowledge":
+                ref_idx = idx - len(faq_questions)
+                reference_context.append(f"【参考知識】{knowledge_contents[ref_idx]}")
 
+        film_match_data = pf_matcher.match(user_q, session_history)
+        film_info_text = pf_matcher.format_match_info(film_match_data, fallback=True)
         if film_info_text:
             reference_context.insert(0, film_info_text)
 
         if metadata_note:
             reference_context.append(f"【参考ファイル情報】{metadata_note}")
 
-        # 応答生成
         if not faq_context and not reference_context:
             answer = "申し訳ございません。ただいまこちらで確認中です。詳細が分かり次第、改めてご案内いたします。"
         else:
             faq_part = "\n\n".join(faq_context[:3]) if faq_context else "該当するFAQは見つかりませんでした。"
-            ref_texts = [r for r in reference_context if "製品フィルム・カラー情報" in r]
-            other_refs = [r for r in reference_context if "製品フィルム・カラー情報" not in r][:2]
+            ref_texts = [text for text in reference_context if "製品フィルム・カラー情報" in text]
+            other_refs = [text for text in reference_context if "製品フィルム・カラー情報" not in text][:2]
             ref_part = "\n".join(ref_texts + other_refs)
 
             prompt = f"""以下は当社のFAQおよび参考情報です。これらを参考に、ユーザーの質問に製造元の立場でご回答ください。
@@ -162,6 +150,8 @@ def chat():
 ユーザーの質問: {user_q}
 回答:"""
 
+            print("=== PROMPT ===\n", prompt)
+
             completion = openai.chat.completions.create(
                 model="gpt-4o",
                 messages=[
@@ -172,7 +162,6 @@ def chat():
             )
             answer = completion.choices[0].message.content
 
-        # 未回答ログ出力
         if "申し訳" in answer:
             new_row = [[
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -194,11 +183,10 @@ def chat():
             "original_question": user_q,
             "expanded_question": expanded_q
         })
-
     except Exception as e:
-        return jsonify({"error": f"内部エラーが発生しました: {str(e)}"}), 500
+        print("[ERROR in /chat]:", e)
+        return jsonify({"response": "エラーが発生しました。", "error": str(e)}), 500
 
-# === フィードバックエンドポイント ===
 @app.route("/feedback", methods=["POST"])
 def feedback():
     data = request.get_json()
@@ -226,11 +214,9 @@ def feedback():
 
     return jsonify({"status": "success"})
 
-# === ヘルスチェック ===
 @app.route("/", methods=["GET"])
 def home():
     return "Integrated Chatbot API is running."
 
-# === 実行 ===
 if __name__ == "__main__":
     app.run(debug=True)
