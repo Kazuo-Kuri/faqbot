@@ -162,6 +162,7 @@ class ProductFilmMatcher:
         elif match_type == "color_to_products":
             lines.append(f"- 印刷色「{info['color']}」に対応可能な製品：")
             lines.append(f"- {', '.join(info['products'])}")
+            lines.append(f"\nこれらの製品では、{info['color']}の印刷色を**選択**することが可能です。")
 
         elif match_type == "color_to_film_colors":
             lines.append(f"- 印刷色「{info['color']}」に対応可能なフィルム（製品問わず）：")
