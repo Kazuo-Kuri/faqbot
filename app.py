@@ -146,15 +146,28 @@ def chat():
         if metadata_note:
             reference_context.append(f"【参考ファイル情報】{metadata_note}")
 
-        if not faq_context and not reference_context:
-            answer = "申し訳ございません。ただいまこちらで確認中です。詳細が分かり次第、改めてご案内いたします。"
-        else:
-            faq_part = "\n\n".join(faq_context[:3]) if faq_context else "該当するFAQは見つかりませんでした。"
-            ref_texts = [text for text in reference_context if "製品フィルム・カラー情報" in text]
-            other_refs = [text for text in reference_context if "製品フィルム・カラー情報" not in text][:2]
-            ref_part = "\n".join(ref_texts + other_refs)
+        # 🎯 完全に該当なしのときはテンプレート回答で返す
+        if not faq_context and not reference_context and not film_info_text:
+            answer = (
+                "当社はコーヒー製品の委託加工を専門とする会社です。"
+                "恐れ入りますが、ご質問内容が当社業務と直接関連のある内容かどうかをご確認のうえ、"
+                "改めてお尋ねいただけますと幸いです。\n\n"
+                "ご不明な点がございましたら、当社の【お問い合わせフォーム】よりご連絡ください。"
+            )
+            add_to_session_history(session_id, "assistant", answer)
+            return jsonify({
+                "response": answer,
+                "original_question": user_q,
+                "expanded_question": user_q
+            })
 
-            prompt = f"""以下は当社のFAQおよび参考情報です。これらを参考に、ユーザーの質問に製造元の立場でご回答ください。
+        # 通常のGPT生成ルート
+        faq_part = "\n\n".join(faq_context[:3]) if faq_context else "該当するFAQは見つかりませんでした。"
+        ref_texts = [text for text in reference_context if "製品フィルム・カラー情報" in text]
+        other_refs = [text for text in reference_context if "製品フィルム・カラー情報" not in text][:2]
+        ref_part = "\n".join(ref_texts + other_refs)
+
+        prompt = f"""以下は当社のFAQおよび参考情報です。これらを参考に、ユーザーの質問に製造元の立場でご回答ください。
 
 【FAQ】
 {faq_part}
@@ -165,9 +178,9 @@ def chat():
 ユーザーの質問: {user_q}
 回答:"""
 
-            print("=== PROMPT ===\n", prompt)
+        print("=== PROMPT ===\n", prompt)
 
-            completion = client.chat.completions.create(
+        completion = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
                     {"role": "system", "content": base_prompt},
@@ -175,9 +188,9 @@ def chat():
                 ],
                 temperature=0.2,
             )
-            answer = completion.choices[0].message.content
+        answer = completion.choices[0].message.content
 
-        if "申し訳" in answer:
+        if "申し訳" in answer or "恐れ入りますが" in answer:
             new_row = [[
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 user_q,
