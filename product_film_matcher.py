@@ -7,16 +7,16 @@ class ProductFilmMatcher:
             self.data = json.load(f)
 
     def get_films_for_product(self, product_name):
-        for p in self.data:
-            if product_name in p:
-                films = list(self.data[p].keys())
-                return {
-                    "matched": True,
-                    "type": "product_to_films",
-                    "product": p,
-                    "films": films
-                }
-        return {"matched": False, "message": "該当する製品種が見つかりませんでした。"}
+        product = next((p for p in self.data if p in product_name), None)
+        if not product:
+            return {"matched": False, "message": "該当する製品種が見つかりませんでした。"}
+        films = list(self.data[product].keys())
+        return {
+            "matched": True,
+            "type": "product_to_films",
+            "product": product,
+            "films": films
+        }
 
     def get_colors_for_film_in_product(self, product_name, film_name):
         for product, films in self.data.items():
@@ -91,45 +91,44 @@ class ProductFilmMatcher:
             }
         return {"matched": False, "message": "印刷色に対応するフィルム色が見つかりませんでした。"}
 
-    def match(self, user_input):
+    def match(self, user_input, history=None):
         keywords = extract_keywords(user_input)
 
         products = keywords.get("product", [])
         films = keywords.get("film", [])
         colors = keywords.get("color", [])
 
-        # --- 完全一致（product × film × color） ---
+        # 全条件揃っている場合：product × film × color の組み合わせ
         if products and films and colors:
             for p in products:
                 for f in films:
-                    color_info = self.get_colors_for_film_in_product(p, f)
-                    if color_info["matched"]:
-                        if any(c in color_info["colors"] for c in colors):
-                            return color_info
+                    info = self.get_colors_for_film_in_product(p, f)
+                    if info["matched"] and any(c in info["colors"] for c in colors):
+                        return info
 
-        # --- 製品とフィルムの組み合わせ ---
+        # product × film
         if products and films:
             for p in products:
                 for f in films:
-                    result = self.get_colors_for_film_in_product(p, f)
-                    if result["matched"]:
-                        return result
+                    info = self.get_colors_for_film_in_product(p, f)
+                    if info["matched"]:
+                        return info
 
-        # --- 製品からフィルム候補 ---
+        # product → film
         if products:
             for p in products:
                 result = self.get_films_for_product(p)
                 if result["matched"]:
                     return result
 
-        # --- フィルムから製品候補 ---
+        # film → product
         if films:
             for f in films:
                 result = self.get_products_for_film(f)
                 if result["matched"]:
                     return result
 
-        # --- 色から探索（色 → 製品／フィルム／フィルム色）---
+        # color だけ指定された場合：products, film_colors, films すべて順に試す
         if colors:
             for getter in [
                 self.get_products_for_color,
@@ -140,8 +139,4 @@ class ProductFilmMatcher:
                 if result["matched"]:
                     return result
 
-        return {
-            "matched": False,
-            "type": "no_match",
-            "message": "製品・フィルム・色のいずれも見つかりませんでした。"
-        }
+        return {"matched": False, "type": "no_match", "message": "製品・フィルム・色のいずれも見つかりませんでした。"}
