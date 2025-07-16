@@ -94,6 +94,8 @@ class ProductFilmMatcher:
     def match(self, user_input, history=None):
         try:
             keywords = extract_keywords(user_input)
+            print("🔍 extract_keywords:", keywords)
+
             if not isinstance(keywords, dict):
                 return {"matched": False, "type": "no_match", "message": "キーワード抽出でエラーが発生しました。"}
 
@@ -110,6 +112,7 @@ class ProductFilmMatcher:
                     for f in films:
                         info = self.get_colors_for_film_in_product(p, f)
                         if info["matched"] and any(c in info.get("colors", []) for c in colors):
+                            print(f"✅ match type: {info['type']}")
                             return info
 
             if products and films:
@@ -117,18 +120,21 @@ class ProductFilmMatcher:
                     for f in films:
                         info = self.get_colors_for_film_in_product(p, f)
                         if info["matched"]:
+                            print(f"✅ match type: {info['type']}")
                             return info
 
             if products:
                 for p in products:
                     result = self.get_films_for_product(p)
                     if result["matched"]:
+                        print(f"✅ match type: {result['type']}")
                         return result
 
             if films:
                 for f in films:
                     result = self.get_products_for_film(f)
                     if result["matched"]:
+                        print(f"✅ match type: {result['type']}")
                         return result
 
             if colors:
@@ -139,19 +145,25 @@ class ProductFilmMatcher:
                 ]:
                     result = getter(colors)
                     if result["matched"]:
+                        print(f"✅ match type: {result['type']}")
                         return result
 
+            print("⚠️ No match found")
             return {"matched": False, "type": "no_match", "message": "製品・フィルム・色のいずれも該当する情報が見つかりませんでした。"}
 
         except Exception as e:
+            print("❌ match error:", e)
             return {"matched": False, "type": "error", "message": f"マッチ処理中にエラーが発生しました：{str(e)}"}
 
-    def format_match_info(self, info):
+    def format_match_info(self, info, fallback=False):
         if not isinstance(info, dict):
             return "【製品フィルム・カラー情報】製品・フィルム・印刷色に関する情報が見つかりませんでした。"
 
         if not info.get("matched", False):
-            return f"【製品フィルム・カラー情報】{info.get('message', '該当情報が見つかりませんでした。')}"
+            if fallback:
+                return f"【製品フィルム・カラー情報】{info.get('message', '該当情報が見つかりませんでした。')}（必要に応じてお問い合わせフォームよりご連絡ください）"
+            else:
+                return ""
 
         match_type = info.get("type")
         lines = ["【製品フィルム・カラー情報】"]

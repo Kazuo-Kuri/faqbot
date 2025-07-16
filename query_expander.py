@@ -1,4 +1,8 @@
-import openai  # ← 重要：忘れずに追加してください
+import openai
+import os
+
+# 明示的に APIキー を設定（app.pyで設定済みなら不要）
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 def expand_query(user_input, session_history):
     try:
