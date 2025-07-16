@@ -13,7 +13,6 @@ from datetime import datetime
 from dotenv import load_dotenv
 from product_film_matcher import ProductFilmMatcher
 from keyword_filter import extract_keywords
-from query_expander import expand_query
 
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -70,7 +69,7 @@ def get_embedding(text):
     try:
         response = openai.embeddings.create(
             model=EMBED_MODEL,
-            input=[text]  # list形式で渡すのがv1系での安定仕様
+            input=[text]
         )
         return np.array(response.data[0].embedding, dtype="float32")
     except Exception as e:
@@ -113,7 +112,10 @@ def chat():
 
         add_to_session_history(session_id, "user", user_q)
         session_history = get_session_history(session_id)
-        expanded_q = expand_query(user_q, session_history)
+
+        # query_expander 無効化：そのまま使う
+        expanded_q = user_q
+
         q_vector = get_embedding(expanded_q)
 
         D, I = index.search(np.array([q_vector]), k=7)
@@ -131,7 +133,7 @@ def chat():
                 reference_context.append(f"【参考知識】{knowledge_contents[ref_idx]}")
 
         film_match_data = pf_matcher.match(user_q, session_history)
-        film_info_text = pf_matcher.format_match_info(film_match_data, fallback=True)
+        film_info_text = pf_matcher.format_match_info(film_match_data)
         if film_info_text:
             reference_context.insert(0, film_info_text)
 
