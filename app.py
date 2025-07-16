@@ -3,7 +3,6 @@ from flask_cors import CORS
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from openai import OpenAI
-import httpx  # <-- 明示的に追加
 import faiss
 import numpy as np
 import os
@@ -16,14 +15,14 @@ from product_film_matcher import ProductFilmMatcher
 
 load_dotenv()
 
+# プロキシ環境変数を削除
+for proxy_var in ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"]:
+    os.environ.pop(proxy_var, None)
+
 app = Flask(__name__)
 CORS(app)
 
-# OpenAI v1 client with explicit httpx.Client to avoid "proxies" error
-client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY"),
-    http_client=httpx.Client(proxies=None)
-)
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 session_histories = {}
 HISTORY_TTL = 1800
