@@ -1,3 +1,14 @@
+import os
+import json
+import time
+import base64
+from datetime import datetime
+from dotenv import load_dotenv
+
+# 🛡️ proxy 環境変数の削除（v1 openai クライアント用）
+os.environ.pop("HTTP_PROXY", None)
+os.environ.pop("HTTPS_PROXY", None)
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from google.oauth2 import service_account
@@ -5,12 +16,6 @@ from googleapiclient.discovery import build
 from openai import OpenAI
 import faiss
 import numpy as np
-import os
-import json
-import time
-import base64
-from datetime import datetime
-from dotenv import load_dotenv
 from product_film_matcher import ProductFilmMatcher
 
 load_dotenv()
