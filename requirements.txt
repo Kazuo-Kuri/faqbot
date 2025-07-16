@@ -1,3 +1,9 @@
+# ビルドに必須のパッケージは先頭に記載
+setuptools>=65.0.0
+wheel
+pip>=23.1
+
+# アプリケーションの依存関係
 flask==2.3.3
 flask-cors==3.0.10
 faiss-cpu==1.7.4
@@ -8,7 +14,3 @@ gunicorn==20.1.0
 google-auth==2.25.2
 google-auth-oauthlib==1.2.0
 google-api-python-client==2.112.0
-
-# 以下を追加 👇
-setuptools>=42
-wheel
