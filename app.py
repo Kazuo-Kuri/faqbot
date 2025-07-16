@@ -12,14 +12,14 @@ import base64
 from datetime import datetime
 from dotenv import load_dotenv
 from product_film_matcher import ProductFilmMatcher
-from keyword_filter import extract_keywords
 
 load_dotenv()
 
-client = OpenAI()
-
 app = Flask(__name__)
 CORS(app)
+
+# OpenAI v1 client
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 session_histories = {}
 HISTORY_TTL = 1800
@@ -74,7 +74,7 @@ def get_embedding(text):
         )
         return np.array(response.data[0].embedding, dtype="float32")
     except Exception as e:
-        print("\u274c Embedding error:", e)
+        print("❌ Embedding error:", e)
         raise
 
 if os.path.exists(VECTOR_PATH) and os.path.exists(INDEX_PATH):
@@ -113,8 +113,8 @@ def chat():
 
         add_to_session_history(session_id, "user", user_q)
         session_history = get_session_history(session_id)
-        expanded_q = user_q  # query_expander 無効化
-        q_vector = get_embedding(expanded_q)
+
+        q_vector = get_embedding(user_q)
 
         D, I = index.search(np.array([q_vector]), k=7)
         faq_context = []
@@ -188,7 +188,7 @@ def chat():
         return jsonify({
             "response": answer,
             "original_question": user_q,
-            "expanded_question": expanded_q
+            "expanded_question": user_q
         })
     except Exception as e:
         print("[ERROR in /chat]:", e)
