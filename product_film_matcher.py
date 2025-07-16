@@ -9,7 +9,10 @@ class ProductFilmMatcher:
     def get_films_for_product(self, product_name):
         product = next((p for p in self.data if p in product_name), None)
         if not product:
-            return {"matched": False, "message": "該当する製品種が見つかりませんでした。"}
+            return {
+                "matched": False,
+                "message": "該当する製品種が見つかりませんでした。"
+            }
         films = list(self.data[product].keys())
         return {
             "matched": True,
@@ -30,7 +33,10 @@ class ProductFilmMatcher:
                             "film": film,
                             "colors": colors
                         }
-        return {"matched": False, "message": "該当する製品とフィルムの組み合わせが見つかりませんでした。"}
+        return {
+            "matched": False,
+            "message": "該当する製品とフィルムの組み合わせが見つかりませんでした。"
+        }
 
     def get_products_for_film(self, film_name):
         matched_products = []
@@ -44,7 +50,10 @@ class ProductFilmMatcher:
                 "film": film_name,
                 "products": matched_products
             }
-        return {"matched": False, "message": "該当するフィルムに対応する製品が見つかりませんでした。"}
+        return {
+            "matched": False,
+            "message": "該当するフィルムに対応する製品が見つかりませんでした。"
+        }
 
     def get_films_for_color(self, color_name):
         matched = set()
@@ -59,7 +68,10 @@ class ProductFilmMatcher:
                 "color": color_name,
                 "films": list(matched)
             }
-        return {"matched": False, "message": "該当する印刷色が見つかりませんでした。"}
+        return {
+            "matched": False,
+            "message": "該当する印刷色が見つかりませんでした。"
+        }
 
     def match(self, user_input):
         keywords = extract_keywords(user_input)
@@ -68,7 +80,6 @@ class ProductFilmMatcher:
         color = keywords.get("color")
 
         if product and film and color:
-            # 3つ揃っている場合は色に対応するフィルムを確認
             color_info = self.get_colors_for_film_in_product(product, film)
             if color_info["matched"] and color in color_info.get("colors", []):
                 return color_info
@@ -85,4 +96,7 @@ class ProductFilmMatcher:
         if color:
             return self.get_films_for_color(color)
 
-        return {"matched": False, "message": "製品・フィルム・色のいずれも見つかりませんでした。"}
+        return {
+            "matched": False,
+            "message": "製品・フィルム・色のいずれも見つかりませんでした。"
+        }

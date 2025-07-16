@@ -64,7 +64,7 @@ if os.path.exists(metadata_path):
         metadata_note = f"{metadata.get('title', '')}（種類：{metadata.get('type', '')}、優先度：{metadata.get('priority', '')}）"
 
 # === コーパス定義 ===
-search_corpus = faq_questions + knowledge_contents  # metadata_note は検索対象に含めない
+search_corpus = faq_questions + knowledge_contents
 source_flags = ["faq"] * len(faq_questions) + ["knowledge"] * len(knowledge_contents)
 
 # === EmbeddingとFAISSインデックス ===
@@ -109,14 +109,22 @@ with open("system_prompt.txt", "r", encoding="utf-8") as f:
 def format_film_match_info(info):
     if not isinstance(info, dict):
         return ""
+    if not info.get("matched"):
+        return ""
+
     lines = ["【製品カラー情報】"]
-    for key, values in info.items():
-        if isinstance(values, (list, tuple)):
-            value_str = "、".join(values)
-        else:
-            value_str = str(values)
-        lines.append(f"- {key}：{value_str}")
-    return textwrap.fill("\n".join(lines), width=80)
+    for key in ["type", "product", "film", "color", "films", "colors", "products"]:
+        if key in info:
+            values = info[key]
+            if isinstance(values, (list, tuple)):
+                value_str = "、".join(values)
+            else:
+                value_str = str(values)
+            lines.append(f"- {key}：{value_str}")
+
+    formatted = textwrap.fill("\n".join(lines), width=80)
+    print("📦 film_match_info included:\n" + formatted)
+    return formatted
 
 # === チャットエンドポイント ===
 @app.route("/chat", methods=["POST"])
