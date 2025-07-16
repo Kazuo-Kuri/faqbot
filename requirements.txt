@@ -1,9 +1,9 @@
-# ビルドに必須のパッケージは先頭に記載
+# build system tools
 setuptools>=65.0.0
 wheel
 pip>=23.1
 
-# アプリケーションの依存関係
+# main packages
 flask==2.3.3
 flask-cors==3.0.10
 faiss-cpu==1.7.4
