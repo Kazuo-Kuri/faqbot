@@ -148,8 +148,9 @@ class ProductFilmMatcher:
             lines.append(f"- {', '.join(info['films'])}")
 
         elif match_type == "product_film_to_colors":
-            lines.append(f"- 「{info['product']} × {info['film']}」で使用可能な印刷色：")
+            lines.append(f"- 製品「{info['product']}」で表面単色印刷により選択可能な色：")
             lines.append(f"- {', '.join(info['colors'])}")
+            lines.append("※表面単色印刷とは、無地フィルム上にロゴや商品名などを単色で印刷する方式です。")
 
         elif match_type == "film_to_products":
             lines.append(f"- フィルム「{info['film']}」が使用できる製品：")
@@ -162,8 +163,7 @@ class ProductFilmMatcher:
         elif match_type == "color_to_products":
             lines.append(f"- 印刷色「{info['color']}」に対応可能な製品：")
             lines.append(f"- {', '.join(info['products'])}")
-            lines.append("")
-            lines.append(f"これらの製品では、{info['color']}の印刷色を**表面単色印刷**として選択することが可能です。")
+            lines.append(f"\nこれらの製品では、{info['color']}の印刷色を選択することが可能です。")
 
         elif match_type == "color_to_film_colors":
             lines.append(f"- 印刷色「{info['color']}」に対応可能なフィルム（製品問わず）：")
