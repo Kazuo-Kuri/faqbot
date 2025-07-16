@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-import openai
+from openai import OpenAI
 import faiss
 import numpy as np
 import os
@@ -15,7 +15,8 @@ from product_film_matcher import ProductFilmMatcher
 from keyword_filter import extract_keywords
 
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+
+client = OpenAI()
 
 app = Flask(__name__)
 CORS(app)
@@ -67,7 +68,7 @@ INDEX_PATH = "data/index.faiss"
 
 def get_embedding(text):
     try:
-        response = openai.embeddings.create(
+        response = client.embeddings.create(
             model=EMBED_MODEL,
             input=[text]
         )
@@ -112,10 +113,7 @@ def chat():
 
         add_to_session_history(session_id, "user", user_q)
         session_history = get_session_history(session_id)
-
-        # query_expander 無効化：そのまま使う
-        expanded_q = user_q
-
+        expanded_q = user_q  # query_expander 無効化
         q_vector = get_embedding(expanded_q)
 
         D, I = index.search(np.array([q_vector]), k=7)
@@ -161,7 +159,7 @@ def chat():
 
             print("=== PROMPT ===\n", prompt)
 
-            completion = openai.chat.completions.create(
+            completion = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
                     {"role": "system", "content": base_prompt},
