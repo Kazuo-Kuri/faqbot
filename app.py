@@ -14,7 +14,6 @@ from dotenv import load_dotenv
 from product_film_matcher import ProductFilmMatcher
 from keyword_filter import extract_keywords
 from query_expander import expand_query
-import textwrap
 
 # === 初期設定 ===
 load_dotenv()
@@ -106,44 +105,6 @@ pf_matcher = ProductFilmMatcher("data/product_film_color_matrix.json")
 with open("system_prompt.txt", "r", encoding="utf-8") as f:
     base_prompt = f.read()
 
-def format_film_match_info(info):
-    if not isinstance(info, dict):
-        return ""
-
-    lines = ["【製品フィルム・カラー情報】"]
-    match_type = info.get("type")
-
-    if match_type == "product_to_films":
-        lines.append(f"- 対象製品：{info['product']}")
-        lines.append(f"- 対応フィルム：{', '.join(info['films'])}")
-
-    elif match_type == "product_film_to_colors":
-        lines.append(f"- 製品：{info['product']} の {info['film']} に対応する印刷色")
-        lines.append(f"- 色：{', '.join(info['colors'])}")
-
-    elif match_type == "film_to_products":
-        lines.append(f"- フィルム：{info['film']} に対応する製品")
-        lines.append(f"- 製品：{', '.join(info['products'])}")
-
-    elif match_type == "color_to_films":
-        lines.append(f"- 印刷色「{info['color']}」が使用可能なフィルム")
-        lines.append(f"- フィルム：{', '.join(info['films'])}")
-
-    elif match_type == "color_to_products":
-        lines.append(f"- 印刷色「{info['color']}」が使用可能な製品")
-        lines.append(f"- 製品：{', '.join(info['products'])}")
-
-    elif match_type == "color_to_film_colors":
-        lines.append(f"- 印刷色「{info['color']}」が使用可能なフィルム色")
-        lines.append(f"- フィルム色：{', '.join(info['film_colors'])}")
-
-    else:
-        return ""
-
-    formatted = textwrap.fill("\n".join(lines), width=80)
-    print("\n📦 film_match_info included:\n" + formatted)
-    return formatted
-
 # === チャットエンドポイント ===
 @app.route("/chat", methods=["POST"])
 def chat():
@@ -175,7 +136,7 @@ def chat():
             reference_context.append(f"【参考知識】{knowledge_contents[ref_idx]}")
 
     film_match_data = pf_matcher.match(user_q, session_history)
-    film_info_text = format_film_match_info(film_match_data)
+    film_info_text = pf_matcher.format_match_info(film_match_data)
     if film_info_text:
         reference_context.insert(0, film_info_text)
 
