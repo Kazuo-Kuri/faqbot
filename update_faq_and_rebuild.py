@@ -64,16 +64,21 @@ if os.path.exists(metadata_path):
         metadata = json.load(f)
         metadata_note = f"【ファイル情報】{metadata.get('title', '')}（種類：{metadata.get('type', '')}、優先度：{metadata.get('priority', '')}）"
 
-# === ベクトルを再生成 ===
+# === ベクトルを再生成（バッチ処理対応）===
 EMBED_MODEL = "text-embedding-3-small"
 search_corpus = [item["question"] for item in faq_list] + knowledge_contents + [metadata_note]
 
-def get_embedding(text):
-    response = openai.embeddings.create(model=EMBED_MODEL, input=text)
-    return np.array(response.data[0].embedding, dtype="float32")
+def get_embeddings_in_batches(texts, batch_size=100):
+    vectors = []
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i:i+batch_size]
+        response = openai.embeddings.create(model=EMBED_MODEL, input=batch)
+        batch_vectors = [np.array(data.embedding, dtype="float32") for data in response.data]
+        vectors.extend(batch_vectors)
+    return np.array(vectors, dtype="float32")
 
-print("🔄 ベクトルを再生成しています...")
-vector_data = np.array([get_embedding(text) for text in search_corpus], dtype="float32")
+print("🔄 ベクトルをバッチで再生成しています...")
+vector_data = get_embeddings_in_batches(search_corpus)
 
 dimension = vector_data.shape[1]
 index = faiss.IndexFlatL2(dimension)

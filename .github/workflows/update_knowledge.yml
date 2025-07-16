@@ -8,6 +8,7 @@ on:
 jobs:
   update-knowledge:
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # ⬅️ タイムアウトを15分→30分に拡張
 
     steps:
       - name: Checkout repository
