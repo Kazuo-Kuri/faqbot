@@ -5,9 +5,14 @@ on:
     - cron: '0 18 * * 0'  # JST月曜03:00（UTC日曜18:00）
   workflow_dispatch:
 
+concurrency:
+  group: update-faq
+  cancel-in-progress: true
+
 jobs:
   update-faq:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
@@ -16,10 +21,12 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: '3.10'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          pip install faiss-cpu python-dotenv
 
       - name: Write credentials.json
         run: echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > credentials.json
