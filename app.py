@@ -109,21 +109,35 @@ with open("system_prompt.txt", "r", encoding="utf-8") as f:
 def format_film_match_info(info):
     if not isinstance(info, dict):
         return ""
-    if not info.get("matched"):
+
+    lines = ["【製品フィルム・カラー情報】"]
+    match_type = info.get("type")
+
+    if match_type == "product_to_films":
+        lines.append(f"- 対象製品：{info['product']}")
+        lines.append(f"- 対応フィルム：{', '.join(info['films'])}")
+
+    elif match_type == "product_film_to_colors":
+        lines.append(f"- 製品：{info['product']} の {info['film']} に対応する印刷色")
+        lines.append(f"- 色：{', '.join(info['colors'])}")
+
+    elif match_type == "film_to_products":
+        lines.append(f"- フィルム：{info['film']} に対応する製品")
+        lines.append(f"- 製品：{', '.join(info['products'])}")
+
+    elif match_type == "color_to_films":
+        lines.append(f"- 印刷色「{info['color']}」が使用可能なフィルム")
+        lines.append(f"- フィルム：{', '.join(info['films'])}")
+
+    elif match_type == "color_to_products":
+        lines.append(f"- 印刷色「{info['color']}」が使用可能な製品")
+        lines.append(f"- 製品：{', '.join(info['products'])}")
+
+    else:
         return ""
 
-    lines = ["【製品カラー情報】"]
-    for key in ["type", "product", "film", "color", "films", "colors", "products"]:
-        if key in info:
-            values = info[key]
-            if isinstance(values, (list, tuple)):
-                value_str = "、".join(values)
-            else:
-                value_str = str(values)
-            lines.append(f"- {key}：{value_str}")
-
     formatted = textwrap.fill("\n".join(lines), width=80)
-    print("📦 film_match_info included:\n" + formatted)
+    print("\n📦 film_match_info included:\n" + formatted)
     return formatted
 
 # === チャットエンドポイント ===
@@ -159,7 +173,7 @@ def chat():
     film_match_data = pf_matcher.match(user_q)
     film_info_text = format_film_match_info(film_match_data)
     if film_info_text:
-        reference_context.append(film_info_text)
+        reference_context.insert(0, film_info_text)  # 優先的に含める
 
     if metadata_note:
         reference_context.append(f"【参考ファイル情報】{metadata_note}")
@@ -168,7 +182,10 @@ def chat():
         answer = "申し訳ございません。ただいまこちらで確認中です。詳細が分かり次第、改めてご案内いたします。"
     else:
         faq_part = "\n\n".join(faq_context[:3]) if faq_context else "該当するFAQは見つかりませんでした。"
-        ref_part = "\n".join(reference_context[:2]) if reference_context else ""
+        ref_texts = [text for text in reference_context if "製品フィルム・カラー情報" in text]
+        other_refs = [text for text in reference_context if "製品フィルム・カラー情報" not in text][:2]
+        ref_part = "\n".join(ref_texts + other_refs)
+
         prompt = f"""以下は当社のFAQおよび参考情報です。これらを参考に、ユーザーの質問に製造元の立場でご回答ください。
 
 【FAQ】

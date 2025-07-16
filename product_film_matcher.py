@@ -9,10 +9,7 @@ class ProductFilmMatcher:
     def get_films_for_product(self, product_name):
         product = next((p for p in self.data if p in product_name), None)
         if not product:
-            return {
-                "matched": False,
-                "message": "該当する製品種が見つかりませんでした。"
-            }
+            return {"matched": False, "message": "該当する製品種が見つかりませんでした。"}
         films = list(self.data[product].keys())
         return {
             "matched": True,
@@ -33,10 +30,7 @@ class ProductFilmMatcher:
                             "film": film,
                             "colors": colors
                         }
-        return {
-            "matched": False,
-            "message": "該当する製品とフィルムの組み合わせが見つかりませんでした。"
-        }
+        return {"matched": False, "message": "該当する製品とフィルムの組み合わせが見つかりませんでした。"}
 
     def get_products_for_film(self, film_name):
         matched_products = []
@@ -50,28 +44,37 @@ class ProductFilmMatcher:
                 "film": film_name,
                 "products": matched_products
             }
-        return {
-            "matched": False,
-            "message": "該当するフィルムに対応する製品が見つかりませんでした。"
-        }
+        return {"matched": False, "message": "該当するフィルムに対応する製品が見つかりませんでした。"}
 
     def get_films_for_color(self, color_name):
-        matched = set()
+        matched_films = set()
         for product, films in self.data.items():
             for film, colors in films.items():
                 if color_name in colors:
-                    matched.add(film)
-        if matched:
+                    matched_films.add(film)
+        if matched_films:
             return {
                 "matched": True,
                 "type": "color_to_films",
                 "color": color_name,
-                "films": list(matched)
+                "films": list(matched_films)
             }
-        return {
-            "matched": False,
-            "message": "該当する印刷色が見つかりませんでした。"
-        }
+        return {"matched": False, "message": "該当する印刷色が見つかりませんでした。"}
+
+    def get_products_for_color(self, color_name):
+        matched_products = set()
+        for product, films in self.data.items():
+            for colors in films.values():
+                if color_name in colors:
+                    matched_products.add(product)
+        if matched_products:
+            return {
+                "matched": True,
+                "type": "color_to_products",
+                "color": color_name,
+                "products": list(matched_products)
+            }
+        return {"matched": False, "message": "該当する印刷色に対応する製品が見つかりませんでした。"}
 
     def match(self, user_input):
         keywords = extract_keywords(user_input)
@@ -94,9 +97,9 @@ class ProductFilmMatcher:
             return self.get_products_for_film(film)
 
         if color:
+            result = self.get_products_for_color(color)
+            if result["matched"]:
+                return result
             return self.get_films_for_color(color)
 
-        return {
-            "matched": False,
-            "message": "製品・フィルム・色のいずれも見つかりませんでした。"
-        }
+        return {"matched": False, "message": "製品・フィルム・色のいずれも見つかりませんでした。"}
