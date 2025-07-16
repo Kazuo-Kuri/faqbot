@@ -150,8 +150,15 @@ class ProductFilmMatcher:
         if not isinstance(info, dict):
             return ""
 
-        match_type = info.get("type")
         lines = ["【製品フィルム・カラー情報】"]
+        match_type = info.get("type")
+
+        if not info.get("matched"):
+            return (
+                "【製品フィルム・カラー情報】\n"
+                "ご希望の製品・フィルム・印刷色の組み合わせが見つかりませんでした。\n"
+                "詳細は当社の【お問い合わせフォーム】よりご相談ください。"
+            )
 
         if match_type == "product_to_films":
             lines.append(f"- 製品「{info['product']}」で選択可能なフィルム：")
