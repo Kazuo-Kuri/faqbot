@@ -115,6 +115,7 @@ def chat():
         data = request.get_json()
         user_q = data.get("question")
         session_id = data.get("session_id", "default")
+        mode = data.get("mode", "default")  # 文量モード: default / short / long
 
         if not user_q:
             return jsonify({"error": "質問がありません"}), 400
@@ -146,7 +147,6 @@ def chat():
         if metadata_note:
             reference_context.append(f"【参考ファイル情報】{metadata_note}")
 
-        # 🎯 完全に該当なしのときはテンプレート回答で返す
         if not faq_context and not reference_context and not film_info_text.strip():
             answer = (
                 "当社はコーヒー製品の委託加工を専門とする会社です。"
@@ -161,7 +161,6 @@ def chat():
                 "expanded_question": user_q
             })
 
-        # 通常のGPT生成ルート
         faq_part = "\n\n".join(faq_context[:3]) if faq_context else "該当するFAQは見つかりませんでした。"
         ref_texts = [text for text in reference_context if "製品フィルム・カラー情報" in text]
         other_refs = [text for text in reference_context if "製品フィルム・カラー情報" not in text][:2]
@@ -176,14 +175,20 @@ def chat():
 {ref_part}
 
 ユーザーの質問: {user_q}
-回答:"""
+回答（文量モード: {mode}）:"""
 
         print("=== PROMPT ===\n", prompt)
+
+        system_prompt = base_prompt
+        if mode == "short":
+            system_prompt += "\n\n可能な限り簡潔かつ要点のみで回答してください。"
+        elif mode == "long":
+            system_prompt += "\n\n詳細な説明や具体例を含めて丁寧に回答してください。"
 
         completion = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
-                    {"role": "system", "content": base_prompt},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.2,
