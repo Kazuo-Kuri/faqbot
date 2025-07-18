@@ -1,8 +1,8 @@
-name: Weekly FAQ and Index Update
+name: Daily FAQ and Index Update
 
 on:
   schedule:
-    - cron: '0 18 * * 0'  # 毎週月曜03:00 JST（UTC日曜18:00）
+    - cron: '0 18 * * *'  # 毎日03:00 JST（UTC 18:00）
   workflow_dispatch:
 
 concurrency:
@@ -41,7 +41,7 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add data/faq.json data/vector_data.npy data/index.faiss
-          git diff --cached --quiet || git commit -m "🗓️ Weekly auto-update FAQ and FAISS index"
+          git diff --cached --quiet || git commit -m "🔄 Daily auto-update FAQ and FAISS index"
           git push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
