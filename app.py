@@ -82,7 +82,7 @@ def get_embedding(text):
         )
         return np.array(response.data[0].embedding, dtype="float32")
     except Exception as e:
-        print("\u274c Embedding error:", e)
+        print("❌ Embedding error:", e)
         raise
 
 if os.path.exists(VECTOR_PATH) and os.path.exists(INDEX_PATH):
@@ -109,13 +109,21 @@ pf_matcher = ProductFilmMatcher("data/product_film_color_matrix.json")
 with open("system_prompt.txt", "r", encoding="utf-8") as f:
     base_prompt = f.read()
 
+def infer_response_mode(question):
+    q_len = len(question)
+    if q_len < 30:
+        return "short"
+    elif q_len > 100:
+        return "long"
+    else:
+        return "default"
+
 @app.route("/chat", methods=["POST"])
 def chat():
     try:
         data = request.get_json()
         user_q = data.get("question")
         session_id = data.get("session_id", "default")
-        mode = data.get("mode", "default")  # 文量モード: default / short / long
 
         if not user_q:
             return jsonify({"error": "質問がありません"}), 400
@@ -166,6 +174,8 @@ def chat():
         other_refs = [text for text in reference_context if "製品フィルム・カラー情報" not in text][:2]
         ref_part = "\n".join(ref_texts + other_refs)
 
+        mode = infer_response_mode(user_q)
+
         prompt = f"""以下は当社のFAQおよび参考情報です。これらを参考に、ユーザーの質問に製造元の立場でご回答ください。
 
 【FAQ】
@@ -175,7 +185,7 @@ def chat():
 {ref_part}
 
 ユーザーの質問: {user_q}
-回答（文量モード: {mode}）:"""
+回答："""
 
         print("=== PROMPT ===\n", prompt)
 
@@ -186,13 +196,13 @@ def chat():
             system_prompt += "\n\n詳細な説明や具体例を含めて丁寧に回答してください。"
 
         completion = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.2,
-            )
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2,
+        )
         answer = completion.choices[0].message.content
 
         if "申し訳" in answer or "恐れ入りますが" in answer or "エラー" in answer:
