@@ -5,9 +5,9 @@ import base64
 from datetime import datetime
 from dotenv import load_dotenv
 
-# 🛡️ proxy 環境変数の削除（v1 openai クライアント用）
-os.environ.pop("HTTP_PROXY", None)
-os.environ.pop("HTTPS_PROXY", None)
+# 🛡️ proxy 環境変数の削除
+for proxy_var in ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"]:
+    os.environ.pop(proxy_var, None)
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -19,10 +19,6 @@ import numpy as np
 from product_film_matcher import ProductFilmMatcher
 
 load_dotenv()
-
-# プロキシ環境変数を削除
-for proxy_var in ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"]:
-    os.environ.pop(proxy_var, None)
 
 app = Flask(__name__)
 CORS(app)
@@ -74,8 +70,12 @@ EMBED_MODEL = "text-embedding-3-small"
 VECTOR_PATH = "data/vector_data.npy"
 INDEX_PATH = "data/index.faiss"
 
+# 安全なembedding取得関数
 def get_embedding(text):
     try:
+        if not text or len(text.strip()) < 5:
+            print("🔸短すぎるためembeddingスキップ:", text)
+            return np.zeros((1536,), dtype="float32")
         response = client.embeddings.create(
             model=EMBED_MODEL,
             input=[text]
@@ -83,7 +83,7 @@ def get_embedding(text):
         return np.array(response.data[0].embedding, dtype="float32")
     except Exception as e:
         print("❌ Embedding error:", e)
-        raise
+        return np.zeros((1536,), dtype="float32")
 
 if os.path.exists(VECTOR_PATH) and os.path.exists(INDEX_PATH):
     vector_data = np.load(VECTOR_PATH)
@@ -122,27 +122,43 @@ def infer_response_mode(question):
 def chat():
     try:
         data = request.get_json()
-        user_q = data.get("question")
+        user_q = data.get("question", "").strip()
         session_id = data.get("session_id", "default")
 
         if not user_q:
             return jsonify({"error": "質問がありません"}), 400
 
+        # 挨拶への自然な対応
+        if user_q in ["こんにちは", "こんばんは", "おはよう", "はじめまして"]:
+            answer = "こんにちは！ご質問内容がありましたら、何でもお気軽にどうぞ。"
+            add_to_session_history(session_id, "user", user_q)
+            add_to_session_history(session_id, "assistant", answer)
+            return jsonify({
+                "response": answer,
+                "original_question": user_q,
+                "expanded_question": user_q
+            })
+
         add_to_session_history(session_id, "user", user_q)
         session_history = get_session_history(session_id)
 
         q_vector = get_embedding(user_q)
+        if not np.any(q_vector):
+            raise ValueError("埋め込みベクトルが取得できませんでした。")
 
         D, I = index.search(np.array([q_vector]), k=7)
+        if I is None or len(I[0]) == 0:
+            raise ValueError("類似検索結果が空です")
+
         faq_context = []
         reference_context = []
 
         for idx in I[0]:
+            if idx >= len(source_flags):
+                continue
             src = source_flags[idx]
             if src == "faq":
-                q = faq_questions[idx]
-                a = faq_answers[idx]
-                faq_context.append(f"Q: {q}\nA: {a}")
+                faq_context.append(f"Q: {faq_questions[idx]}\nA: {faq_answers[idx]}")
             elif src == "knowledge":
                 ref_idx = idx - len(faq_questions)
                 reference_context.append(f"【参考知識】{knowledge_contents[ref_idx]}")
@@ -156,22 +172,22 @@ def chat():
             reference_context.append(f"【参考ファイル情報】{metadata_note}")
 
         if not faq_context and not reference_context and not film_info_text.strip():
-            answer = (
+            fallback_answer = (
                 "当社はコーヒー製品の委託加工を専門とする会社です。"
                 "恐れ入りますが、ご質問内容が当社業務と直接関連のある内容かどうかをご確認のうえ、"
                 "改めてお尋ねいただけますと幸いです。\n\n"
                 "ご不明な点がございましたら、当社の【お問い合わせフォーム】よりご連絡ください。"
             )
-            add_to_session_history(session_id, "assistant", answer)
+            add_to_session_history(session_id, "assistant", fallback_answer)
             return jsonify({
-                "response": answer,
+                "response": fallback_answer,
                 "original_question": user_q,
                 "expanded_question": user_q
             })
 
         faq_part = "\n\n".join(faq_context[:3]) if faq_context else "該当するFAQは見つかりませんでした。"
-        ref_texts = [text for text in reference_context if "製品フィルム・カラー情報" in text]
-        other_refs = [text for text in reference_context if "製品フィルム・カラー情報" not in text][:2]
+        ref_texts = [t for t in reference_context if "製品フィルム" in t]
+        other_refs = [t for t in reference_context if "製品フィルム" not in t][:2]
         ref_part = "\n".join(ref_texts + other_refs)
 
         mode = infer_response_mode(user_q)
@@ -187,8 +203,6 @@ def chat():
 ユーザーの質問: {user_q}
 回答："""
 
-        print("=== PROMPT ===\n", prompt)
-
         system_prompt = base_prompt
         if mode == "short":
             system_prompt += "\n\n可能な限り簡潔かつ要点のみで回答してください。"
@@ -203,7 +217,7 @@ def chat():
             ],
             temperature=0.2,
         )
-        answer = completion.choices[0].message.content
+        answer = completion.choices[0].message.content.strip()
 
         if "申し訳" in answer or "恐れ入りますが" in answer or "エラー" in answer:
             new_row = [[
@@ -226,8 +240,9 @@ def chat():
             "original_question": user_q,
             "expanded_question": user_q
         })
+
     except Exception as e:
-        print("[ERROR in /chat]:", e)
+        print("❌ [ERROR in /chat]:", e)
         return jsonify({"response": "エラーが発生しました。", "error": str(e)}), 500
 
 @app.route("/feedback", methods=["POST"])
