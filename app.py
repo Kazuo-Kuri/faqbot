@@ -215,14 +215,24 @@ def chat():
 
         MODEL_NAME = os.getenv("OPENAI_MODEL", "gpt-5")
 
-        completion = client.chat.completions.create(
+        params = dict(
             model=MODEL_NAME,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.2,
         )
+
+        # GPT-5 系は temperature 固定（指定しない or 1）
+        if MODEL_NAME.startswith("gpt-5"):
+            params["max_completion_tokens"] = 800
+            # temperatureは付けない（どうしても付けるなら 1）
+            # params["temperature"] = 1
+        else:
+            params["max_tokens"] = 800
+            params["temperature"] = 0.2  # 旧モデル時のみ
+
+        completion = client.chat.completions.create(**params)
         answer = completion.choices[0].message.content.strip()
 
         if "申し訳" in answer or "恐れ入りますが" in answer or "エラー" in answer:
