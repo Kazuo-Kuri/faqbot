@@ -213,8 +213,10 @@ def chat():
         elif mode == "long":
             system_prompt += "\n\n詳細な説明や具体例を含めて丁寧に回答してください。"
 
+        MODEL_NAME = os.getenv("OPENAI_MODEL", "gpt-5")
+
         completion = client.chat.completions.create(
-            model="gpt-4o",
+            model=MODEL_NAME,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt}
