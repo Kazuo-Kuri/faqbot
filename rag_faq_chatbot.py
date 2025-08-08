@@ -155,7 +155,7 @@ def chat():
 回答:"""
 
         completion = openai.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-5",
             messages=[
                 {"role": "system", "content": base_prompt},
                 {"role": "user", "content": prompt}
