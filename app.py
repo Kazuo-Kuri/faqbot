@@ -100,6 +100,7 @@ else:
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 UNANSWERED_SHEET = "faq_suggestions"
 FEEDBACK_SHEET = "feedback_log"
+CHAT_LOGS_SHEET = os.getenv("CHAT_LOGS_SHEET", "chat_logs")
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 credentials_info = json.loads(base64.b64decode(os.environ["GOOGLE_CREDENTIALS"]).decode("utf-8"))
@@ -135,6 +136,23 @@ def chat():
         # 挨拶パターンへの即時返答
         if any(greet in user_q for greet in GREETING_PATTERNS):
             reply = "こんにちは！ご質問があればお気軽にどうぞ。"
+
+            # ここでログ
+            sheet_service.values().append(
+                spreadsheetId=SPREADSHEET_ID,
+                range=f"{CHAT_LOGS_SHEET}!A2:G",
+                valueInputOption="RAW",
+                body={"values":[[
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    user_q,
+                    reply,
+                    "None",
+                    0,
+                    session_id,
+                    "short"
+                ]]}
+            ).execute()
+
             add_to_session_history(session_id, "assistant", reply)
             return jsonify({
                 "response": reply,
@@ -182,6 +200,23 @@ def chat():
                 "改めてお尋ねいただけますと幸いです。\n\n"
                 "ご不明な点がございましたら、当社の【お問い合わせフォーム】よりご連絡ください。"
             )
+
+            # ★ ここを追加：全件ログ（sourceは None、未回答フラグは0 or 判定に合わせて）
+            sheet_service.values().append(
+                spreadsheetId=SPREADSHEET_ID,
+                range=f"{CHAT_LOGS_SHEET}!A2:G",
+                valueInputOption="RAW",
+                body={"values":[[
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    user_q,
+                    answer,
+                    "None",
+                    0,
+                    session_id,
+                    "short"
+                ]]}
+            ).execute()
+
             add_to_session_history(session_id, "assistant", answer)
             return jsonify({
                 "response": answer,
@@ -230,6 +265,30 @@ def chat():
                 valueInputOption="RAW",
                 body={"values": [[datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_q, "未回答", 1]]}
             ).execute()
+
+        # --- 全件ログを chat_logs に保存 ---
+        is_unanswered = 1 if ("申し訳" in answer or "恐れ入りますが" in answer or "エラー" in answer) else 0
+
+        src_tags = []
+        if faq_context:            src_tags.append("FAQ")
+        if reference_context:      src_tags.append("Knowledge")
+        if film_info_text.strip(): src_tags.append("ProductFilm")
+        source_label = "+".join(src_tags) if src_tags else "None"
+
+        sheet_service.values().append(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{CHAT_LOGS_SHEET}!A2:G",
+            valueInputOption="RAW",
+            body={"values": [[
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),  # timestamp
+                user_q,                                       # question
+                answer,                                       # answer
+                source_label,                                 # source (FAQ/Knowledge/ProductFilm/複合)
+                is_unanswered,                                # 未回答フラグ
+                session_id,                                   # セッションID
+                mode                                          # short/default/long
+            ]]}
+        ).execute()
 
         add_to_session_history(session_id, "assistant", answer)
 
