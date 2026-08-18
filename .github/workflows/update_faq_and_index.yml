@@ -9,6 +9,9 @@ concurrency:
   group: faqbot-data-update
   cancel-in-progress: false
 
+permissions:
+  contents: write
+
 jobs:
   rebuild:
     runs-on: ubuntu-22.04
@@ -23,7 +26,11 @@ jobs:
       - name: 🐍 Python をセットアップ
         uses: actions/setup-python@v6
         with:
-          python-version: '3.10'
+          python-version: '3.11'
+
+      - name: 🔧 pip を更新
+        run: |
+          python -m pip install --upgrade pip
 
       - name: 🔧 必要なパッケージをインストール
         run: |
@@ -31,32 +38,59 @@ jobs:
           pip install faiss-cpu python-dotenv
 
       - name: 🔐 credentials.json を書き出し
-        run: echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > credentials.json
+        run: |
+          echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > credentials.json
 
       - name: 🧠 FAQ & インデックスを自動更新
-        run: python update_faq_and_rebuild.py
+        run: |
+          python update_faq_and_rebuild.py
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
-      - name: 💾 更新されたデータをコミット・プッシュ（変更があった場合のみ）
+      - name: 💾 更新されたデータをコミット・プッシュ
+        shell: bash
         run: |
+          set -e
+
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add data/faq.json data/vector_data.npy data/index.faiss
+          git add \
+            data/faq.json \
+            data/vector_data.npy \
+            data/index.faiss
 
           if git diff --cached --quiet; then
-            echo "変更はありません。"
+            echo "✅ 更新されたデータはありません。"
             exit 0
           fi
 
           git commit -m "🔄 Daily auto-update FAQ and FAISS index"
 
           echo "🔄 リモートの最新 main を取得します..."
-          git pull --rebase origin main
+          git fetch origin main
+
+          echo "🔄 最新 main に自動更新コミットを載せ直します..."
+          git rebase origin/main
 
           echo "⬆️ GitHubへpushします..."
-          git push origin main
 
+          for attempt in 1 2 3
+          do
+            if git push origin HEAD:main; then
+              echo "✅ push が完了しました。"
+              exit 0
+            fi
+
+            echo "⚠️ push が競合しました。再試行します (${attempt}/3)..."
+
+            git fetch origin main
+            git rebase origin/main
+
+            sleep 5
+          done
+
+          echo "❌ 3回試行しましたが push に失敗しました。"
+          exit 1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
