@@ -6,8 +6,11 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: update-knowledge
-  cancel-in-progress: true
+  group: faqbot-data-update
+  cancel-in-progress: false
+
+permissions:
+  contents: write
 
 jobs:
   update-knowledge:
@@ -17,27 +20,82 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.10'
+          python-version: '3.11'
+
+      - name: Upgrade pip
+        run: |
+          python -m pip install --upgrade pip
 
       - name: Install dependencies
-        run: pip install gspread oauth2client numpy openai faiss-cpu python-dotenv
+        run: |
+          pip install \
+            gspread \
+            google-auth \
+            numpy \
+            openai \
+            faiss-cpu \
+            python-dotenv
 
       - name: Write credentials.json
-        run: echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > credentials.json
+        run: |
+          echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > credentials.json
 
-      - name: Generate knowledge.json
+      - name: Generate knowledge.json and vectors
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: python scripts/generate_knowledge.py
+        run: |
+          python scripts/generate_knowledge.py
 
       - name: Commit and push
+        shell: bash
         run: |
-          git config user.name github-actions
-          git config user.email github-actions@github.com
-          git add data/knowledge.json
-          git commit -m "Auto update knowledge.json" || echo "No changes to commit"
-          git push
+          set -e
+
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            data/knowledge.json \
+            data/vector_data.npy \
+            data/index.faiss
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Auto update knowledge.json and FAISS index"
+
+          echo "Fetching latest main..."
+          git fetch origin main
+
+          echo "Rebasing onto latest main..."
+          git rebase origin/main
+
+          echo "Pushing changes..."
+
+          for attempt in 1 2 3
+          do
+            if git push origin HEAD:main; then
+              echo "Push completed successfully."
+              exit 0
+            fi
+
+            echo "Push conflict detected. Retrying (${attempt}/3)..."
+
+            git fetch origin main
+            git rebase origin/main
+
+            sleep 5
+          done
+
+          echo "Push failed after 3 attempts."
+          exit 1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
