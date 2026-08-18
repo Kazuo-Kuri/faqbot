@@ -6,8 +6,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: update-faq-and-index
-  cancel-in-progress: true
+  group: faqbot-data-update
+  cancel-in-progress: false
 
 jobs:
   rebuild:
@@ -17,6 +17,8 @@ jobs:
     steps:
       - name: 📦 リポジトリをチェックアウト
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: 🐍 Python をセットアップ
         uses: actions/setup-python@v6
@@ -40,8 +42,21 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
           git add data/faq.json data/vector_data.npy data/index.faiss
-          git diff --cached --quiet || git commit -m "🔄 Daily auto-update FAQ and FAISS index"
-          git push
+
+          if git diff --cached --quiet; then
+            echo "変更はありません。"
+            exit 0
+          fi
+
+          git commit -m "🔄 Daily auto-update FAQ and FAISS index"
+
+          echo "🔄 リモートの最新 main を取得します..."
+          git pull --rebase origin main
+
+          echo "⬆️ GitHubへpushします..."
+          git push origin main
+
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
