@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-import openai
+from openai import OpenAI
 import faiss
 import numpy as np
 import os
@@ -17,7 +17,7 @@ from query_expander import expand_query
 
 # === 初期設定 ===
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 app = Flask(__name__)
 CORS(app)
@@ -50,9 +50,11 @@ faq_answers = [item["answer"] for item in faq_items]
 with open("data/knowledge.json", "r", encoding="utf-8") as f:
     knowledge_dict = json.load(f)
 knowledge_contents = [
-    f"{category}：{text}"
+    f"{str(category).strip()}：{str(text).strip()}"
     for category, texts in knowledge_dict.items()
+    if isinstance(texts, list)
     for text in texts
+    if str(category).strip() and str(text).strip()
 ]
 
 metadata_note = ""
@@ -60,11 +62,18 @@ metadata_path = "data/metadata.json"
 if os.path.exists(metadata_path):
     with open(metadata_path, "r", encoding="utf-8") as f:
         metadata = json.load(f)
-        metadata_note = f"【ファイル情報】{metadata.get('title', '')}（種類：{metadata.get('type', '')}、優先度：{metadata.get('priority', '')}）"
+        title = str(metadata.get("title", "")).strip()
+        metadata_type = str(metadata.get("type", "")).strip()
+        priority = str(metadata.get("priority", "")).strip()
+        if title or metadata_type or priority:
+            metadata_note = f"【ファイル情報】{title}（種類：{metadata_type}、優先度：{priority}）"
 
 # === コーパス定義（順序維持が重要）===
-search_corpus = faq_questions + knowledge_contents + [metadata_note]
-source_flags = ["faq"] * len(faq_questions) + ["knowledge"] * len(knowledge_contents) + ["metadata"]
+search_corpus = faq_questions + knowledge_contents
+source_flags = ["faq"] * len(faq_questions) + ["knowledge"] * len(knowledge_contents)
+if metadata_note:
+    search_corpus.append(metadata_note)
+    source_flags.append("metadata")
 
 # === EmbeddingとFAISSインデックス ===
 EMBED_MODEL = "text-embedding-3-small"
@@ -72,19 +81,22 @@ VECTOR_PATH = "data/vector_data.npy"
 INDEX_PATH = "data/index.faiss"
 
 def get_embedding(text):
-    response = openai.embeddings.create(model=EMBED_MODEL, input=text)
+    response = client.embeddings.create(model=EMBED_MODEL, input=[text])
     return np.array(response.data[0].embedding, dtype="float32")
 
-# キャッシュロード（存在しない場合は作成）
-if os.path.exists(VECTOR_PATH) and os.path.exists(INDEX_PATH):
-    vector_data = np.load(VECTOR_PATH)
-    index = faiss.read_index(INDEX_PATH)
-else:
-    vector_data = np.array([get_embedding(text) for text in search_corpus], dtype="float32")
-    index = faiss.IndexFlatL2(vector_data.shape[1])
-    index.add(vector_data)
-    np.save(VECTOR_PATH, vector_data)
-    faiss.write_index(index, INDEX_PATH)
+# 生成は update_faq_and_rebuild.py に一元化し、ここでは読込のみ行う。
+if not os.path.exists(VECTOR_PATH) or not os.path.exists(INDEX_PATH):
+    raise FileNotFoundError(
+        "Embedding/FAISS成果物がありません。update_faq_and_rebuild.py を実行してください。"
+    )
+
+vector_data = np.load(VECTOR_PATH)
+index = faiss.read_index(INDEX_PATH)
+if not (len(search_corpus) == vector_data.shape[0] == index.ntotal):
+    raise RuntimeError(
+        "検索コーパスとEmbedding/FAISSの件数が一致しません。"
+        " update_faq_and_rebuild.py で再生成してください。"
+    )
 
 # === Google Sheets設定 ===
 SPREADSHEET_ID = "1asbjzo-G9I6SmztBG18iWuiTKetOJK20JwAyPF11fA4"

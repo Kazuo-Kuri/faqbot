@@ -54,7 +54,11 @@ faq_answers = [item["answer"] for item in faq_items]
 with open("data/knowledge.json", encoding="utf-8") as f:
     knowledge_dict = json.load(f)
 knowledge_contents = [
-    f"{category}：{text}" for category, texts in knowledge_dict.items() for text in texts
+    f"{str(category).strip()}：{str(text).strip()}"
+    for category, texts in knowledge_dict.items()
+    if isinstance(texts, list)
+    for text in texts
+    if str(category).strip() and str(text).strip()
 ]
 
 metadata_note = ""
@@ -62,10 +66,17 @@ metadata_path = "data/metadata.json"
 if os.path.exists(metadata_path):
     with open(metadata_path, encoding="utf-8") as f:
         metadata = json.load(f)
-        metadata_note = f"{metadata.get('title', '')} (種類: {metadata.get('type', '')}, 優先度: {metadata.get('priority', '')})"
+        title = str(metadata.get("title", "")).strip()
+        metadata_type = str(metadata.get("type", "")).strip()
+        priority = str(metadata.get("priority", "")).strip()
+        if title or metadata_type or priority:
+            metadata_note = f"【ファイル情報】{title}（種類：{metadata_type}、優先度：{priority}）"
 
 search_corpus = faq_questions + knowledge_contents
 source_flags = ["faq"] * len(faq_questions) + ["knowledge"] * len(knowledge_contents)
+if metadata_note:
+    search_corpus.append(metadata_note)
+    source_flags.append("metadata")
 
 EMBED_MODEL = "text-embedding-3-small"
 VECTOR_PATH = "data/vector_data.npy"
@@ -86,15 +97,18 @@ def get_embedding(text):
         print("❌ Embedding error:", e)
         raise
 
-if os.path.exists(VECTOR_PATH) and os.path.exists(INDEX_PATH):
-    vector_data = np.load(VECTOR_PATH)
-    index = faiss.read_index(INDEX_PATH)
-else:
-    vector_data = np.array([get_embedding(text) for text in search_corpus], dtype="float32")
-    index = faiss.IndexFlatL2(vector_data.shape[1])
-    index.add(vector_data)
-    np.save(VECTOR_PATH, vector_data)
-    faiss.write_index(index, INDEX_PATH)
+if not os.path.exists(VECTOR_PATH) or not os.path.exists(INDEX_PATH):
+    raise FileNotFoundError(
+        "Embedding/FAISS成果物がありません。update_faq_and_rebuild.py を実行してください。"
+    )
+
+vector_data = np.load(VECTOR_PATH)
+index = faiss.read_index(INDEX_PATH)
+if not (len(search_corpus) == vector_data.shape[0] == index.ntotal):
+    raise RuntimeError(
+        "検索コーパスとEmbedding/FAISSの件数が一致しません。"
+        " update_faq_and_rebuild.py で再生成してください。"
+    )
 
 # Google Sheets
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")

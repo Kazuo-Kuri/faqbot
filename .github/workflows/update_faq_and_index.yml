@@ -1,4 +1,4 @@
-name: Daily FAQ and Index Update
+name: Daily FAQ, Knowledge and FAISS Update
 
 on:
   schedule:
@@ -35,13 +35,18 @@ jobs:
       - name: 🔧 必要なパッケージをインストール
         run: |
           pip install -r requirements.txt
-          pip install faiss-cpu python-dotenv
 
       - name: 🔐 credentials.json を書き出し
+        env:
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
         run: |
-          echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > credentials.json
+          printf '%s' "$GOOGLE_CREDENTIALS_JSON" > credentials.json
 
-      - name: 🧠 FAQ & インデックスを自動更新
+      - name: 📚 Knowledge を更新
+        run: |
+          python scripts/generate_knowledge.py
+
+      - name: 🧠 FAQ・Embedding・FAISS を更新
         run: |
           python update_faq_and_rebuild.py
         env:
@@ -56,6 +61,7 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
           git add \
+            data/knowledge.json \
             data/faq.json \
             data/vector_data.npy \
             data/index.faiss
@@ -65,28 +71,20 @@ jobs:
             exit 0
           fi
 
-          git commit -m "🔄 Daily auto-update FAQ and FAISS index"
-
-          echo "🔄 リモートの最新 main を取得します..."
-          git fetch origin main
-
-          echo "🔄 最新 main に自動更新コミットを載せ直します..."
-          git rebase origin/main
-
-          echo "⬆️ GitHubへpushします..."
+          git commit -m "🔄 Daily auto-update FAQ, Knowledge and FAISS index"
 
           for attempt in 1 2 3
           do
+            echo "🔄 最新 main を取り込みます (${attempt}/3)..."
+            git fetch origin main
+            git rebase origin/main
+
             if git push origin HEAD:main; then
               echo "✅ push が完了しました。"
               exit 0
             fi
 
             echo "⚠️ push が競合しました。再試行します (${attempt}/3)..."
-
-            git fetch origin main
-            git rebase origin/main
-
             sleep 5
           done
 

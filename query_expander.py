@@ -1,8 +1,7 @@
-import openai
 import os
+from openai import OpenAI
 
-# 明示的に APIキー を設定（app.pyで設定済みなら不要）
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def expand_query(user_input, session_history):
     try:
@@ -32,7 +31,7 @@ def expand_query(user_input, session_history):
             }
         ]
 
-        response = openai.chat.completions.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=prompt,
             temperature=0.3,
